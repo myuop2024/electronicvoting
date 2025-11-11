@@ -1,0 +1,35 @@
+[tool.poetry]
+name = "observernet-api"
+version = "0.1.0"
+description = "Multi-tenant election API"
+authors = ["ObserverNet Platform <platform@example.org>"]
+packages = [{ include = "observernet_api", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "0.110.0"
+uvicorn = { extras = ["standard"], version = "0.29.0" }
+loguru = "0.7.2"
+httpx = "0.27.0"
+pydantic = "2.6.3"
+SQLAlchemy = "2.0.29"
+asyncpg = "0.29.0"
+redis = "5.0.3"
+python-dotenv = "1.0.1"
+celery = "5.3.6"
+cryptography = "42.0.5"
+pyjwt = "2.8.0"
+passlib = "1.7.4"
+qrcode = "7.4.2"
+boto3 = "1.34.34"
+python-fabric = "3.2.2"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "8.1.1"
+pytest-asyncio = "0.23.5"
+httpx = { extras = ["cli"], version = "0.27.0" }
+ruff = "0.2.2"
+
+[build-system]
+requires = ["poetry-core>=1.7.0"]
+build-backend = "poetry.core.masonry.api"

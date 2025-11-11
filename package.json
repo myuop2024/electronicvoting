@@ -1,0 +1,20 @@
+{
+  "name": "electronicvoting-monorepo",
+  "private": true,
+  "packageManager": "pnpm@8.15.5",
+  "scripts": {
+    "dev:web": "turbo run dev --filter=web",
+    "dev:admin": "turbo run dev --filter=admin",
+    "dev:superadmin": "turbo run dev --filter=superadmin",
+    "dev:api": "turbo run dev --filter=api",
+    "dev:worker": "turbo run dev --filter=worker",
+    "dev:verifier": "turbo run dev --filter=verifier",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "build": "turbo run build",
+    "format": "turbo run format"
+  },
+  "devDependencies": {
+    "turbo": "2.0.3"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "extends": "@electronicvoting/config/tsconfig",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@ui/*": ["../../packages/ui/src/*"],
+      "@components/*": ["./src/components/*"]
+    },
+    "types": ["node", "@types/node"]
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", "**/*.d.ts"],
+  "exclude": ["node_modules"]
+}

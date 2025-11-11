@@ -1,0 +1,7 @@
+module ballot_cc
+
+go 1.21
+
+require (
+github.com/hyperledger/fabric-contract-api-go v1.1.0
+)

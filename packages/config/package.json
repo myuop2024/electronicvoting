@@ -1,0 +1,11 @@
+{
+  "name": "@electronicvoting/config",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    "./tailwind": "./tailwind.config.js",
+    "./postcss": "./postcss.config.js",
+    "./tsconfig": "./tsconfig.base.json",
+    "./eslint": "./eslint-next.js"
+  }
+}

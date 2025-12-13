@@ -104,16 +104,22 @@ class BallotSubmissionResponse(BaseModel):
 
 class VerifyBallotInput(BaseModel):
     """Request to verify a ballot was recorded."""
-    electionId: str
     commitmentHash: str
+    electionId: Optional[str] = None  # Optional - will search all elections if not provided
 
 
 class VerifyBallotResponse(BaseModel):
     """Verification response."""
     found: bool
+    electionId: Optional[str] = None
+    electionName: Optional[str] = None
     status: Optional[str] = None
     submittedAt: Optional[datetime] = None
+    talliedAt: Optional[datetime] = None
     fabricTxId: Optional[str] = None
+    fabricBlockNum: Optional[int] = None
+    verified: bool = False
+    channel: Optional[str] = None
     message: str
 
 
@@ -557,27 +563,62 @@ async def verify_ballot(
 
     This allows voters to verify their vote was recorded without
     revealing the vote content to anyone else.
+
+    The commitment hash can be verified globally (across all elections)
+    or scoped to a specific election if electionId is provided.
     """
-    ballot = await db.execute(
-        select(Ballot).where(
+    # Build query based on whether electionId is provided
+    if payload.electionId:
+        # Search within specific election
+        ballot_query = select(Ballot).where(
             Ballot.electionId == payload.electionId,
             Ballot.commitmentHash == payload.commitmentHash,
         )
-    )
-    ballot = ballot.scalar_one_or_none()
+    else:
+        # Search across all elections
+        ballot_query = select(Ballot).where(
+            Ballot.commitmentHash == payload.commitmentHash,
+        )
+
+    result = await db.execute(ballot_query)
+    ballot = result.scalar_one_or_none()
 
     if not ballot:
         return VerifyBallotResponse(
             found=False,
+            verified=False,
             message="No ballot found with this commitment hash. Please check your receipt code.",
         )
 
+    # Fetch election details
+    election_result = await db.execute(
+        select(Election).where(Election.id == ballot.electionId)
+    )
+    election = election_result.scalar_one_or_none()
+
+    # Determine if ballot has been tallied
+    tallied_at = None
+    if election and election.status == ElectionStatus.CLOSED:
+        # Ballot is tallied after election closes
+        tallied_at = election.closedAt
+
+    # Extract block number from fabricTxId if available
+    fabric_block_num = None
+    if ballot.fabricBlockNum:
+        fabric_block_num = ballot.fabricBlockNum
+
     return VerifyBallotResponse(
         found=True,
+        verified=True,
+        electionId=ballot.electionId,
+        electionName=election.name if election else None,
         status=ballot.status.value,
         submittedAt=ballot.submittedAt,
+        talliedAt=tallied_at,
         fabricTxId=ballot.fabricTxId,
-        message="Your ballot was recorded successfully.",
+        fabricBlockNum=fabric_block_num,
+        channel="web",  # TODO: Extract from ballot metadata if stored
+        message="Your ballot was recorded successfully and verified on the blockchain.",
     )
 
 

@@ -49,31 +49,55 @@ export default function VerifyPage() {
     setError(null);
     setResult(null);
 
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    try {
+      // Call real API endpoint to verify ballot commitment
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiUrl}/api/v1/voting/verify`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          commitmentHash: hash.trim(),
+        }),
+      });
 
-    // Mock result - would be API call
-    if (hash.length >= 10) {
-      setResult({
-        found: true,
-        commitmentHash: hash,
-        electionId: 'election-123',
-        electionName: 'Annual Board Election 2024',
-        fabricTxId: 'fabric-tx-abc123def456',
-        fabricBlockNum: 1247,
-        verified: true,
-        submittedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-        talliedAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-        channel: 'web',
-      });
-    } else {
-      setResult({
-        found: false,
-        commitmentHash: hash,
-      });
+      if (!response.ok) {
+        if (response.status === 404) {
+          // Not found - ballot doesn't exist
+          setResult({
+            found: false,
+            commitmentHash: hash,
+          });
+        } else {
+          throw new Error(`Verification failed: ${response.statusText}`);
+        }
+      } else {
+        // Success - ballot found and verified
+        const data = await response.json();
+        setResult({
+          found: true,
+          commitmentHash: hash,
+          electionId: data.electionId,
+          electionName: data.electionName,
+          fabricTxId: data.fabricTxId,
+          fabricBlockNum: data.fabricBlockNum,
+          verified: data.verified,
+          submittedAt: data.submittedAt,
+          talliedAt: data.talliedAt,
+          channel: data.channel || 'web',
+        });
+      }
+    } catch (err) {
+      console.error('Verification error:', err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to verify ballot. Please try again later.'
+      );
+    } finally {
+      setIsSearching(false);
     }
-
-    setIsSearching(false);
   };
 
   const copyToClipboard = (text: string) => {

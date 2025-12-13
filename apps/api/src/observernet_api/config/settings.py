@@ -27,9 +27,13 @@ class Settings(BaseSettings):
     fabric_chaincode: str = Field(default="ballot_cc", alias="FABRIC_CHAINCODE_NAME")
 
     # Didit KYC
+    didit_api_key: str = Field(default="", alias="DIDIT_API_KEY")
     didit_client_id: str = Field(default="", alias="DIDIT_CLIENT_ID")
     didit_client_secret: str = Field(default="", alias="DIDIT_CLIENT_SECRET")
     didit_webhook_secret: str = Field(default="", alias="DIDIT_WEBHOOK_SECRET")
+
+    # Application URLs
+    app_base_url: str = Field(default="http://localhost:3000", alias="APP_BASE_URL")
 
     # Messaging providers
     whatsapp_provider: str = Field(default="twilio", alias="WHATSAPP_PROVIDER")

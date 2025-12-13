@@ -298,6 +298,69 @@ class Vote(Base):
     )
 
 
+class AccessCodeStatus(str, enum.Enum):
+    ACTIVE = "ACTIVE"
+    USED = "USED"
+    EXPIRED = "EXPIRED"
+    REVOKED = "REVOKED"
+
+
+class AccessCodeScope(str, enum.Enum):
+    VOTER = "VOTER"  # Maps to specific voter
+    OPEN = "OPEN"    # Any eligible voter can use
+
+
+class AccessCode(Base):
+    """
+    Access codes for voter verification.
+
+    Access codes provide a way for voters to prove eligibility
+    without revealing their identity upfront. The code can map
+    to a specific voter (pre-registered) or be open (first-come).
+    """
+    __tablename__ = "AccessCode"
+
+    id = Column(String, primary_key=True)
+    electionId = Column(String, ForeignKey("Election.id", ondelete="CASCADE"), nullable=False)
+
+    # The code itself (hashed for security)
+    codeHash = Column(String, unique=True, nullable=False)
+
+    # Scope determines how the code can be used
+    scope = Column(Enum(AccessCodeScope), default=AccessCodeScope.VOTER)
+
+    # Optional: Link to specific voter (for pre-registered voters)
+    voterId = Column(String, ForeignKey("Voter.id", ondelete="SET NULL"), nullable=True)
+
+    # Status tracking
+    status = Column(Enum(AccessCodeStatus), default=AccessCodeStatus.ACTIVE)
+
+    # Rate limiting: track failed attempts
+    failedAttempts = Column(Integer, default=0)
+    lastAttemptAt = Column(DateTime, nullable=True)
+    lockedUntil = Column(DateTime, nullable=True)
+
+    # Usage tracking
+    usedAt = Column(DateTime, nullable=True)
+    usedByIp = Column(String, nullable=True)
+
+    # Expiration
+    expiresAt = Column(DateTime, nullable=True)
+
+    # Delivery tracking
+    deliveryMethod = Column(String, nullable=True)  # email, sms, whatsapp, print
+    deliveredAt = Column(DateTime, nullable=True)
+
+    createdAt = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("AccessCode_electionId_idx", "electionId"),
+        Index("AccessCode_codeHash_idx", "codeHash"),
+        Index("AccessCode_voterId_idx", "voterId"),
+        Index("AccessCode_status_idx", "status"),
+    )
+
+
 class AuditLog(Base):
     """Audit log for all security-relevant actions."""
     __tablename__ = "AuditLog"

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   Search,
@@ -18,110 +18,121 @@ import {
   Clock,
   Download,
   Filter,
+  Loader2,
 } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 
-// Mock data
-const organizations = [
-  {
-    id: '1',
-    name: 'Civic Foundation',
-    slug: 'civic-foundation',
-    plan: 'enterprise',
-    status: 'active',
-    users: 450,
-    elections: 12,
-    totalVotes: 28500,
-    createdAt: '2023-01-15T00:00:00Z',
-    lastActive: '2024-03-15T14:30:00Z',
-    owner: 'Sarah Johnson',
-    ownerEmail: 'sarah@civicfoundation.org',
-  },
-  {
-    id: '2',
-    name: 'University Council',
-    slug: 'university-council',
-    plan: 'professional',
-    status: 'active',
-    users: 1200,
-    elections: 8,
-    totalVotes: 15200,
-    createdAt: '2023-03-20T00:00:00Z',
-    lastActive: '2024-03-15T10:15:00Z',
-    owner: 'Dr. Michael Chen',
-    ownerEmail: 'mchen@university.edu',
-  },
-  {
-    id: '3',
-    name: 'HOA Network',
-    slug: 'hoa-network',
-    plan: 'starter',
-    status: 'trial',
-    users: 85,
-    elections: 3,
-    totalVotes: 420,
-    createdAt: '2024-03-01T00:00:00Z',
-    lastActive: '2024-03-14T16:45:00Z',
-    owner: 'Tom Wilson',
-    ownerEmail: 'tom@hoanetwork.com',
-  },
-  {
-    id: '4',
-    name: 'Labor Union Local 42',
-    slug: 'labor-union-42',
-    plan: 'professional',
-    status: 'active',
-    users: 320,
-    elections: 5,
-    totalVotes: 8900,
-    createdAt: '2023-06-10T00:00:00Z',
-    lastActive: '2024-03-15T09:00:00Z',
-    owner: 'Maria Garcia',
-    ownerEmail: 'mgarcia@local42.org',
-  },
-  {
-    id: '5',
-    name: 'Church of Good Will',
-    slug: 'church-goodwill',
-    plan: 'starter',
-    status: 'suspended',
-    users: 45,
-    elections: 2,
-    totalVotes: 180,
-    createdAt: '2023-11-01T00:00:00Z',
-    lastActive: '2024-02-20T11:30:00Z',
-    owner: 'Rev. David Park',
-    ownerEmail: 'david@churchgoodwill.org',
-  },
-];
+interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  plan: string;
+  status: string;
+  memberCount: number;
+  electionCount: number;
+  logoUrl: string | null;
+  createdAt: string;
+  ownerName: string | null;
+  ownerEmail: string | null;
+}
 
-const statusColors = {
-  active: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
-  trial: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  suspended: 'bg-red-500/20 text-red-400 border-red-500/30',
-  cancelled: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
+const statusColors: Record<string, string> = {
+  ACTIVE: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+  TRIAL: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  SUSPENDED: 'bg-red-500/20 text-red-400 border-red-500/30',
+  ARCHIVED: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
 };
 
-const planColors = {
-  enterprise: 'bg-purple-500/20 text-purple-400',
-  professional: 'bg-blue-500/20 text-blue-400',
-  starter: 'bg-slate-500/20 text-slate-400',
+const planColors: Record<string, string> = {
+  ENTERPRISE: 'bg-purple-500/20 text-purple-400',
+  PROFESSIONAL: 'bg-blue-500/20 text-blue-400',
+  STARTER: 'bg-slate-500/20 text-slate-400',
+  FREE: 'bg-slate-500/20 text-slate-400',
 };
 
 export default function OrganizationsPage() {
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [planFilter, setPlanFilter] = useState('all');
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+
+  useEffect(() => {
+    fetchOrganizations();
+  }, [statusFilter, planFilter, page]);
+
+  async function fetchOrganizations() {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (statusFilter !== 'all') {
+        params.set('status', statusFilter.toUpperCase());
+      }
+      if (planFilter !== 'all') {
+        params.set('plan', planFilter.toUpperCase());
+      }
+      params.set('page', page.toString());
+      params.set('limit', '20');
+
+      const res = await fetch(`/api/organizations?${params}`);
+      if (!res.ok) {
+        throw new Error('Failed to fetch organizations');
+      }
+      const data = await res.json();
+      setOrganizations(data.organizations || []);
+      setTotal(data.total || 0);
+      setTotalPages(data.totalPages || 1);
+    } catch (err: any) {
+      setError(err.message);
+      setOrganizations([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function updateOrgStatus(id: string, status: string) {
+    try {
+      const res = await fetch(`/api/organizations/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to update');
+      }
+      fetchOrganizations();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  }
+
+  async function deleteOrg(id: string) {
+    if (!confirm('Are you sure you want to delete this organization?')) return;
+    try {
+      const res = await fetch(`/api/organizations/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to delete');
+      }
+      fetchOrganizations();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  }
 
   const filteredOrgs = organizations.filter((org) => {
-    if (statusFilter !== 'all' && org.status !== statusFilter) return false;
-    if (planFilter !== 'all' && org.plan !== planFilter) return false;
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       return (
         org.name.toLowerCase().includes(query) ||
-        org.owner.toLowerCase().includes(query) ||
-        org.ownerEmail.toLowerCase().includes(query)
+        org.ownerName?.toLowerCase().includes(query) ||
+        org.ownerEmail?.toLowerCase().includes(query)
       );
     }
     return true;
@@ -152,10 +163,10 @@ export default function OrganizationsPage() {
       {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-4">
         {[
-          { label: 'Total', count: organizations.length, color: 'text-white' },
-          { label: 'Active', count: organizations.filter((o) => o.status === 'active').length, color: 'text-emerald-400' },
-          { label: 'Trial', count: organizations.filter((o) => o.status === 'trial').length, color: 'text-blue-400' },
-          { label: 'Suspended', count: organizations.filter((o) => o.status === 'suspended').length, color: 'text-red-400' },
+          { label: 'Total', count: total, color: 'text-white' },
+          { label: 'Active', count: organizations.filter((o) => o.status === 'ACTIVE').length, color: 'text-emerald-400' },
+          { label: 'Trial', count: organizations.filter((o) => o.status === 'TRIAL').length, color: 'text-blue-400' },
+          { label: 'Suspended', count: organizations.filter((o) => o.status === 'SUSPENDED').length, color: 'text-red-400' },
         ].map((stat) => (
           <div key={stat.label} className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
             <p className="text-sm text-slate-400">{stat.label}</p>
@@ -185,6 +196,7 @@ export default function OrganizationsPage() {
           <option value="active">Active</option>
           <option value="trial">Trial</option>
           <option value="suspended">Suspended</option>
+          <option value="archived">Archived</option>
         </select>
         <select
           value={planFilter}
@@ -195,139 +207,201 @@ export default function OrganizationsPage() {
           <option value="enterprise">Enterprise</option>
           <option value="professional">Professional</option>
           <option value="starter">Starter</option>
+          <option value="free">Free</option>
         </select>
       </div>
 
-      {/* Organizations Table */}
-      <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/50">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-slate-800 bg-slate-800/50">
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
-                  Organization
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
-                  Plan
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
-                  Status
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
-                  Users
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
-                  Elections
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
-                  Last Active
-                </th>
-                <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-slate-400">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800">
-              {filteredOrgs.map((org) => (
-                <tr key={org.id} className="hover:bg-slate-800/50">
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-700 text-lg font-bold text-white">
-                        {org.name[0]}
-                      </div>
-                      <div>
-                        <Link
-                          href={`/organizations/${org.id}`}
-                          className="font-medium text-white hover:text-indigo-400"
-                        >
-                          {org.name}
-                        </Link>
-                        <p className="text-sm text-slate-400">{org.ownerEmail}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${planColors[org.plan as keyof typeof planColors]}`}>
-                      {org.plan}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${statusColors[org.status as keyof typeof statusColors]}`}>
-                      {org.status === 'active' && <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400" />}
-                      {org.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-slate-300">{org.users}</td>
-                  <td className="px-4 py-4 text-slate-300">{org.elections}</td>
-                  <td className="px-4 py-4 text-sm text-slate-400">
-                    {new Date(org.lastActive).toLocaleDateString()}
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <DropdownMenu.Root>
-                      <DropdownMenu.Trigger asChild>
-                        <button className="rounded-lg p-2 text-slate-400 hover:bg-slate-700 hover:text-white">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </button>
-                      </DropdownMenu.Trigger>
-                      <DropdownMenu.Portal>
-                        <DropdownMenu.Content
-                          className="z-50 min-w-[160px] rounded-lg border border-slate-700 bg-slate-800 p-1 shadow-xl"
-                          sideOffset={5}
-                          align="end"
-                        >
-                          <DropdownMenu.Item className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-200 outline-none hover:bg-slate-700">
-                            <Eye className="h-4 w-4" />
-                            View Details
-                          </DropdownMenu.Item>
-                          <DropdownMenu.Item className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-200 outline-none hover:bg-slate-700">
-                            <Edit className="h-4 w-4" />
-                            Edit
-                          </DropdownMenu.Item>
-                          <DropdownMenu.Item className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-200 outline-none hover:bg-slate-700">
-                            <Users className="h-4 w-4" />
-                            Manage Users
-                          </DropdownMenu.Item>
-                          <DropdownMenu.Separator className="my-1 h-px bg-slate-700" />
-                          {org.status === 'active' ? (
-                            <DropdownMenu.Item className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-orange-400 outline-none hover:bg-slate-700">
-                              <Ban className="h-4 w-4" />
-                              Suspend
-                            </DropdownMenu.Item>
-                          ) : (
-                            <DropdownMenu.Item className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-emerald-400 outline-none hover:bg-slate-700">
-                              <CheckCircle className="h-4 w-4" />
-                              Activate
-                            </DropdownMenu.Item>
-                          )}
-                          <DropdownMenu.Item className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-red-400 outline-none hover:bg-slate-700">
-                            <Trash2 className="h-4 w-4" />
-                            Delete
-                          </DropdownMenu.Item>
-                        </DropdownMenu.Content>
-                      </DropdownMenu.Portal>
-                    </DropdownMenu.Root>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Loading State */}
+      {loading && (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
         </div>
+      )}
 
-        {/* Pagination */}
-        <div className="flex items-center justify-between border-t border-slate-800 px-4 py-3">
-          <p className="text-sm text-slate-400">
-            Showing {filteredOrgs.length} of {organizations.length} organizations
-          </p>
-          <div className="flex gap-2">
-            <button className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-700">
-              Previous
-            </button>
-            <button className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-700">
-              Next
-            </button>
+      {/* Error State */}
+      {error && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-400">
+          {error}
+          <button onClick={fetchOrganizations} className="ml-4 underline">
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Organizations Table */}
+      {!loading && !error && (
+        <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/50">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-800 bg-slate-800/50">
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Organization
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Plan
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Status
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Members
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Elections
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Created
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-slate-400">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {filteredOrgs.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-12 text-center">
+                      <Building2 className="mx-auto h-12 w-12 text-slate-600" />
+                      <h3 className="mt-4 text-lg font-medium text-white">No organizations found</h3>
+                      <p className="mt-2 text-sm text-slate-400">
+                        {searchQuery || statusFilter !== 'all' || planFilter !== 'all'
+                          ? 'Try adjusting your filters'
+                          : 'Create your first organization to get started'}
+                      </p>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredOrgs.map((org) => (
+                    <tr key={org.id} className="hover:bg-slate-800/50">
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-3">
+                          {org.logoUrl ? (
+                            <img
+                              src={org.logoUrl}
+                              alt={org.name}
+                              className="h-10 w-10 rounded-lg object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-700 text-lg font-bold text-white">
+                              {org.name[0]}
+                            </div>
+                          )}
+                          <div>
+                            <Link
+                              href={`/organizations/${org.id}`}
+                              className="font-medium text-white hover:text-indigo-400"
+                            >
+                              {org.name}
+                            </Link>
+                            <p className="text-sm text-slate-400">{org.ownerEmail || org.slug}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${planColors[org.plan] || planColors.FREE}`}>
+                          {org.plan}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${statusColors[org.status] || statusColors.ACTIVE}`}>
+                          {org.status === 'ACTIVE' && <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-emerald-400" />}
+                          {org.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-slate-300">{org.memberCount}</td>
+                      <td className="px-4 py-4 text-slate-300">{org.electionCount}</td>
+                      <td className="px-4 py-4 text-sm text-slate-400">
+                        {new Date(org.createdAt).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-4 text-right">
+                        <DropdownMenu.Root>
+                          <DropdownMenu.Trigger asChild>
+                            <button className="rounded-lg p-2 text-slate-400 hover:bg-slate-700 hover:text-white">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </button>
+                          </DropdownMenu.Trigger>
+                          <DropdownMenu.Portal>
+                            <DropdownMenu.Content
+                              className="z-50 min-w-[160px] rounded-lg border border-slate-700 bg-slate-800 p-1 shadow-xl"
+                              sideOffset={5}
+                              align="end"
+                            >
+                              <DropdownMenu.Item className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-200 outline-none hover:bg-slate-700">
+                                <Eye className="h-4 w-4" />
+                                View Details
+                              </DropdownMenu.Item>
+                              <DropdownMenu.Item className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-200 outline-none hover:bg-slate-700">
+                                <Edit className="h-4 w-4" />
+                                Edit
+                              </DropdownMenu.Item>
+                              <DropdownMenu.Item className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-slate-200 outline-none hover:bg-slate-700">
+                                <Users className="h-4 w-4" />
+                                Manage Members
+                              </DropdownMenu.Item>
+                              <DropdownMenu.Separator className="my-1 h-px bg-slate-700" />
+                              {org.status === 'ACTIVE' ? (
+                                <DropdownMenu.Item
+                                  className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-orange-400 outline-none hover:bg-slate-700"
+                                  onClick={() => updateOrgStatus(org.id, 'SUSPENDED')}
+                                >
+                                  <Ban className="h-4 w-4" />
+                                  Suspend
+                                </DropdownMenu.Item>
+                              ) : (
+                                <DropdownMenu.Item
+                                  className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-emerald-400 outline-none hover:bg-slate-700"
+                                  onClick={() => updateOrgStatus(org.id, 'ACTIVE')}
+                                >
+                                  <CheckCircle className="h-4 w-4" />
+                                  Activate
+                                </DropdownMenu.Item>
+                              )}
+                              <DropdownMenu.Item
+                                className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm text-red-400 outline-none hover:bg-slate-700"
+                                onClick={() => deleteOrg(org.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                Delete
+                              </DropdownMenu.Item>
+                            </DropdownMenu.Content>
+                          </DropdownMenu.Portal>
+                        </DropdownMenu.Root>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination */}
+          <div className="flex items-center justify-between border-t border-slate-800 px-4 py-3">
+            <p className="text-sm text-slate-400">
+              Showing {filteredOrgs.length} of {total} organizations
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-700 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <span className="px-3 py-1.5 text-sm text-slate-400">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-700 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useMutation } from '@tanstack/react-query';
 import {
   ArrowLeft,
   ArrowRight,
@@ -17,6 +18,8 @@ import {
   CheckCircle,
   Image,
   Upload,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 
 type Step = 'basics' | 'contests' | 'settings' | 'review';
@@ -161,10 +164,130 @@ export default function CreateElectionPage() {
     );
   };
 
+  // API types
+  interface CreateElectionResponse {
+    election: {
+      id: string;
+      slug: string;
+      name: string;
+    };
+  }
+
+  interface CreateContestResponse {
+    contest: {
+      id: string;
+      name: string;
+    };
+  }
+
+  // Create election mutation
+  const createElectionMutation = useMutation({
+    mutationFn: async (): Promise<CreateElectionResponse> => {
+      // Combine date and time for start/end
+      const votingStartAt = new Date(`${formData.startDate}T${formData.startTime}`);
+      const votingEndAt = new Date(`${formData.endDate}T${formData.endTime}`);
+
+      const response = await fetch('/api/elections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: formData.name,
+          description: formData.description,
+          votingStartAt: votingStartAt.toISOString(),
+          votingEndAt: votingEndAt.toISOString(),
+          allowVoteChange: false,
+          verificationMode: formData.accessCodeRequired ? 'CODE_ONLY' : 'NONE',
+          requireCaptcha: true,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to create election');
+      }
+
+      return response.json();
+    },
+    onSuccess: async (data) => {
+      // Now create contests for the election
+      const electionId = data.election.id;
+
+      for (const contest of contests) {
+        if (!contest.title.trim()) continue;
+
+        try {
+          const contestResponse = await fetch(`/api/elections/${electionId}/contests`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: contest.title,
+              description: contest.description,
+              voteType: mapVoteType(contest.type),
+              maxSelections: contest.maxSelections,
+              minSelections: contest.minSelections,
+              options: contest.options
+                .filter(opt => opt.title.trim())
+                .map((opt, idx) => ({
+                  name: opt.title,
+                  description: opt.description,
+                  sortOrder: idx,
+                })),
+            }),
+          });
+
+          if (!contestResponse.ok) {
+            console.error('Failed to create contest:', contest.title);
+          }
+        } catch (err) {
+          console.error('Error creating contest:', err);
+        }
+      }
+
+      router.push(`/elections/${electionId}`);
+    },
+    onError: (error: Error) => {
+      setError(error.message);
+    },
+  });
+
+  // Map frontend vote type to backend format
+  const mapVoteType = (type: string): string => {
+    const mapping: Record<string, string> = {
+      single_choice: 'PLURALITY',
+      multiple_choice: 'APPROVAL',
+      ranked_choice: 'RANKED_CHOICE',
+      approval: 'APPROVAL',
+    };
+    return mapping[type] || 'PLURALITY';
+  };
+
+  const [error, setError] = useState<string | null>(null);
+
   const handleSubmit = async () => {
-    // TODO: Submit to API
-    console.log({ formData, contests });
-    router.push('/elections');
+    setError(null);
+
+    // Basic validation
+    if (!formData.name.trim()) {
+      setError('Election name is required');
+      setCurrentStep('basics');
+      return;
+    }
+    if (!formData.startDate || !formData.endDate) {
+      setError('Start and end dates are required');
+      setCurrentStep('basics');
+      return;
+    }
+
+    const hasValidContest = contests.some(c =>
+      c.title.trim() && c.options.filter(o => o.title.trim()).length >= 2
+    );
+    if (!hasValidContest) {
+      setError('At least one contest with two options is required');
+      setCurrentStep('contests');
+      return;
+    }
+
+    createElectionMutation.mutate();
   };
 
   return (
@@ -217,6 +340,20 @@ export default function CreateElectionPage() {
           })}
         </div>
       </div>
+
+      {/* Error Banner */}
+      {error && (
+        <div className="flex items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-400">
+          <AlertCircle className="h-5 w-5 flex-shrink-0" />
+          <span className="text-sm">{error}</span>
+          <button
+            onClick={() => setError(null)}
+            className="ml-auto text-red-400 hover:text-red-300"
+          >
+            &times;
+          </button>
+        </div>
+      )}
 
       {/* Step Content */}
       <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-6">
@@ -632,10 +769,20 @@ export default function CreateElectionPage() {
         ) : (
           <button
             onClick={handleSubmit}
-            className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-6 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+            disabled={createElectionMutation.isPending}
+            className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-6 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <CheckCircle className="h-4 w-4" />
-            Create Election
+            {createElectionMutation.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Creating...
+              </>
+            ) : (
+              <>
+                <CheckCircle className="h-4 w-4" />
+                Create Election
+              </>
+            )}
           </button>
         )}
       </div>

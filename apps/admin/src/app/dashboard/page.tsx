@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   Vote,
@@ -16,6 +17,7 @@ import {
   Calendar,
   Activity,
   Shield,
+  Loader2,
 } from 'lucide-react';
 import {
   LineChart,
@@ -34,70 +36,42 @@ import {
   Cell,
 } from 'recharts';
 
-// Mock data - replace with actual API calls
-const stats = {
-  activeElections: 3,
-  totalVoters: 15420,
-  totalVotesCast: 8234,
-  turnoutPercentage: 53.4,
-  pendingReviews: 12,
-  paperBallotsPending: 47,
-};
+interface DashboardStats {
+  activeElections: number;
+  totalVoters: number;
+  totalVotesCast: number;
+  turnoutPercentage: number;
+  pendingReviews: number;
+  paperBallotsPending: number;
+}
 
-const recentElections = [
-  {
-    id: '1',
-    name: '2024 Board of Directors Election',
-    status: 'active',
-    turnout: 67.2,
-    totalVoters: 5420,
-    votesCast: 3642,
-    endDate: '2024-03-20T18:00:00Z',
-  },
-  {
-    id: '2',
-    name: 'Budget Referendum Q1 2024',
-    status: 'active',
-    turnout: 45.1,
-    totalVoters: 8900,
-    votesCast: 4014,
-    endDate: '2024-03-18T23:59:00Z',
-  },
-  {
-    id: '3',
-    name: 'Committee Chair Selection',
-    status: 'draft',
-    turnout: 0,
-    totalVoters: 1100,
-    votesCast: 0,
-    endDate: '2024-04-01T12:00:00Z',
-  },
-];
+interface RecentElection {
+  id: string;
+  name: string;
+  status: string;
+  turnout: number;
+  totalVoters: number;
+  votesCast: number;
+  endDate: string;
+}
 
-const turnoutData = [
-  { time: '9AM', votes: 120 },
-  { time: '10AM', votes: 340 },
-  { time: '11AM', votes: 580 },
-  { time: '12PM', votes: 890 },
-  { time: '1PM', votes: 1200 },
-  { time: '2PM', votes: 1450 },
-  { time: '3PM', votes: 1680 },
-  { time: '4PM', votes: 1890 },
-];
+interface ActivityItem {
+  id: number;
+  type: string;
+  message: string;
+  time: string;
+}
 
-const deviceBreakdown = [
-  { name: 'Mobile', value: 62, color: '#3b82f6' },
-  { name: 'Desktop', value: 31, color: '#10b981' },
-  { name: 'Tablet', value: 7, color: '#f59e0b' },
-];
+interface DeviceBreakdown {
+  name: string;
+  value: number;
+  color: string;
+}
 
-const recentActivity = [
-  { id: 1, type: 'vote', message: '142 new votes in Board Election', time: '2 min ago' },
-  { id: 2, type: 'upload', message: 'Allowlist updated (+230 voters)', time: '15 min ago' },
-  { id: 3, type: 'paper', message: '12 paper ballots pending review', time: '32 min ago' },
-  { id: 4, type: 'security', message: '2 failed login attempts blocked', time: '1 hour ago' },
-  { id: 5, type: 'election', message: 'Budget Referendum extended by 24h', time: '2 hours ago' },
-];
+interface TurnoutDataPoint {
+  time: string;
+  votes: number;
+}
 
 const quickActions = [
   { href: '/elections/new', label: 'Create Election', icon: Plus, color: 'bg-blue-600' },
@@ -139,7 +113,7 @@ function StatCard({
   );
 }
 
-function ElectionCard({ election }: { election: typeof recentElections[0] }) {
+function ElectionCard({ election }: { election: RecentElection }) {
   const statusColors = {
     active: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
     draft: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
@@ -202,6 +176,63 @@ function ElectionCard({ election }: { election: typeof recentElections[0] }) {
 }
 
 export default function DashboardPage() {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<DashboardStats>({
+    activeElections: 0,
+    totalVoters: 0,
+    totalVotesCast: 0,
+    turnoutPercentage: 0,
+    pendingReviews: 0,
+    paperBallotsPending: 0,
+  });
+  const [recentElections, setRecentElections] = useState<RecentElection[]>([]);
+  const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([]);
+  const [turnoutData, setTurnoutData] = useState<TurnoutDataPoint[]>([]);
+  const [deviceBreakdown, setDeviceBreakdown] = useState<DeviceBreakdown[]>([]);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  async function fetchDashboardData() {
+    try {
+      const res = await fetch('/api/dashboard/stats');
+      if (!res.ok) {
+        throw new Error('Failed to fetch dashboard data');
+      }
+      const data = await res.json();
+      setStats(data.stats);
+      setRecentElections(data.recentElections || []);
+      setRecentActivity(data.recentActivity || []);
+      setTurnoutData(data.turnoutData || []);
+      setDeviceBreakdown(data.deviceBreakdown || []);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-400">
+        {error}
+        <button onClick={fetchDashboardData} className="ml-4 underline">
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -232,22 +263,16 @@ export default function DashboardPage() {
           label="Active Elections"
           value={stats.activeElections}
           icon={Vote}
-          trend="1 new this week"
-          trendUp
         />
         <StatCard
           label="Total Voters"
           value={stats.totalVoters.toLocaleString()}
           icon={Users}
-          trend="+230 today"
-          trendUp
         />
         <StatCard
           label="Overall Turnout"
           value={`${stats.turnoutPercentage}%`}
           icon={TrendingUp}
-          trend="+5.2% vs last"
-          trendUp
         />
         <StatCard
           label="Pending Reviews"

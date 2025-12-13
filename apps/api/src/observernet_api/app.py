@@ -1,11 +1,13 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from .config.settings import settings
 from .api.v1.router import api_router
 from .api.v1.websocket import router as websocket_router
 from .security.headers import security_headers_middleware
+from .security.auth import AuthMiddleware, get_current_subject, Subject
 from .webhooks.router import webhook_router
 
 
@@ -28,6 +30,10 @@ def create_app() -> FastAPI:
     )
 
     app.add_middleware(SessionMiddleware, secret_key=settings.session_secret)
+
+    # Add authentication middleware to attach subject to request state
+    app.add_middleware(BaseHTTPMiddleware, dispatch=AuthMiddleware())
+
     app.middleware("http")(security_headers_middleware)
 
     # REST API routes

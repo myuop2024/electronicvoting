@@ -1,0 +1,354 @@
+version: '3.9'
+
+# Production Docker Compose Configuration
+# Designed for high availability and horizontal scaling
+
+services:
+  # PostgreSQL with replication
+  postgres-primary:
+    image: postgres:16-alpine
+    container_name: observernet-postgres-primary
+    environment:
+      POSTGRES_DB: observernet
+      POSTGRES_USER: observernet
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    volumes:
+      - postgres_data_primary:/var/lib/postgresql/data
+      - ./infrastructure/postgres/postgresql.conf:/etc/postgresql/postgresql.conf
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U observernet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
+    restart: unless-stopped
+
+  # Redis Cluster - 6 nodes (3 masters, 3 replicas)
+  redis-node-1:
+    image: redis:7-alpine
+    container_name: observernet-redis-1
+    command: redis-server --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data_1:/data
+    ports:
+      - "6379:6379"
+      - "16379:16379"
+    restart: unless-stopped
+
+  redis-node-2:
+    image: redis:7-alpine
+    container_name: observernet-redis-2
+    command: redis-server --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data_2:/data
+    ports:
+      - "6380:6379"
+      - "16380:16379"
+    restart: unless-stopped
+
+  redis-node-3:
+    image: redis:7-alpine
+    container_name: observernet-redis-3
+    command: redis-server --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data_3:/data
+    ports:
+      - "6381:6379"
+      - "16381:16379"
+    restart: unless-stopped
+
+  redis-node-4:
+    image: redis:7-alpine
+    container_name: observernet-redis-4
+    command: redis-server --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data_4:/data
+    ports:
+      - "6382:6379"
+      - "16382:16379"
+    restart: unless-stopped
+
+  redis-node-5:
+    image: redis:7-alpine
+    container_name: observernet-redis-5
+    command: redis-server --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data_5:/data
+    ports:
+      - "6383:6379"
+      - "16383:16379"
+    restart: unless-stopped
+
+  redis-node-6:
+    image: redis:7-alpine
+    container_name: observernet-redis-6
+    command: redis-server --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data_6:/data
+    ports:
+      - "6384:6379"
+      - "16384:16379"
+    restart: unless-stopped
+
+  # API - Multiple instances behind load balancer
+  api-1:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile.production
+    container_name: observernet-api-1
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql://observernet:${POSTGRES_PASSWORD}@postgres-primary:5432/observernet
+      REDIS_URL: redis://redis-node-1:6379/0
+      SESSION_SECRET: ${SESSION_SECRET}
+      CELERY_BROKER_URL: redis://redis-node-1:6379/1
+      CELERY_RESULT_BACKEND: redis://redis-node-1:6379/2
+      ZK_PROOF_MODE: production
+      MIXNET_THRESHOLD: 3
+      MIXNET_TOTAL_NODES: 5
+      GUNICORN_WORKERS: 4
+      GUNICORN_THREADS: 2
+    command: gunicorn observernet_api.app:create_app --bind 0.0.0.0:8000 --workers 4 --worker-class uvicorn.workers.UvicornWorker --timeout 120 --keep-alive 5 --max-requests 10000
+    depends_on:
+      - postgres-primary
+      - redis-node-1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      replicas: 3
+    restart: unless-stopped
+
+  api-2:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile.production
+    container_name: observernet-api-2
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql://observernet:${POSTGRES_PASSWORD}@postgres-primary:5432/observernet
+      REDIS_URL: redis://redis-node-2:6379/0
+      SESSION_SECRET: ${SESSION_SECRET}
+      CELERY_BROKER_URL: redis://redis-node-1:6379/1
+      ZK_PROOF_MODE: production
+      MIXNET_THRESHOLD: 3
+      GUNICORN_WORKERS: 4
+    command: gunicorn observernet_api.app:create_app --bind 0.0.0.0:8000 --workers 4 --worker-class uvicorn.workers.UvicornWorker --timeout 120
+    depends_on:
+      - postgres-primary
+      - redis-node-2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+    restart: unless-stopped
+
+  api-3:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile.production
+    container_name: observernet-api-3
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql://observernet:${POSTGRES_PASSWORD}@postgres-primary:5432/observernet
+      REDIS_URL: redis://redis-node-3:6379/0
+      SESSION_SECRET: ${SESSION_SECRET}
+      CELERY_BROKER_URL: redis://redis-node-1:6379/1
+      ZK_PROOF_MODE: production
+      GUNICORN_WORKERS: 4
+    command: gunicorn observernet_api.app:create_app --bind 0.0.0.0:8000 --workers 4 --worker-class uvicorn.workers.UvicornWorker --timeout 120
+    depends_on:
+      - postgres-primary
+      - redis-node-3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+    restart: unless-stopped
+
+  # Crypto Workers - Heavy ZK operations
+  crypto-worker-1:
+    build:
+      context: ./apps/worker
+      dockerfile: Dockerfile
+    container_name: observernet-crypto-worker-1
+    environment:
+      CELERY_BROKER_URL: redis://redis-node-1:6379/1
+      CELERY_RESULT_BACKEND: redis://redis-node-1:6379/2
+      DATABASE_URL: postgresql://observernet:${POSTGRES_PASSWORD}@postgres-primary:5432/observernet
+      ZK_PROOF_MODE: production
+    command: celery -A observernet_worker.crypto_worker worker --loglevel=info --queues=crypto_heavy --concurrency=4 --autoscale=8,2
+    depends_on:
+      - redis-node-1
+      - postgres-primary
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 1G
+      replicas: 5
+    restart: unless-stopped
+
+  # Mix-Net Workers
+  mixnet-worker-1:
+    build:
+      context: ./apps/worker
+      dockerfile: Dockerfile
+    container_name: observernet-mixnet-worker-1
+    environment:
+      CELERY_BROKER_URL: redis://redis-node-1:6379/1
+      CELERY_RESULT_BACKEND: redis://redis-node-1:6379/2
+      MIXNET_THRESHOLD: 3
+      MIXNET_TOTAL_NODES: 5
+    command: celery -A observernet_worker.crypto_worker worker --loglevel=info --queues=mixnet --concurrency=2 --autoscale=4,1
+    depends_on:
+      - redis-node-1
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+      replicas: 5
+    restart: unless-stopped
+
+  # Nginx Load Balancer
+  nginx:
+    image: nginx:alpine
+    container_name: observernet-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/nginx/nginx.production.conf:/etc/nginx/nginx.conf:ro
+      - ./infrastructure/nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - api-1
+      - api-2
+      - api-3
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+    restart: unless-stopped
+
+  # Web Portal
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile.production
+    container_name: observernet-web
+    environment:
+      NEXT_PUBLIC_API_URL: https://api.observernet.org
+      NODE_ENV: production
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+      replicas: 3
+    restart: unless-stopped
+
+  # Observer Portal
+  observer:
+    build:
+      context: ./apps/observer
+      dockerfile: Dockerfile
+    container_name: observernet-observer
+    environment:
+      NEXT_PUBLIC_API_URL: https://api.observernet.org
+      NODE_ENV: production
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+      replicas: 2
+    restart: unless-stopped
+
+  # Prometheus Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: observernet-prometheus
+    volumes:
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  # Grafana Dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: observernet-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_INSTALL_PLUGINS: redis-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infrastructure/grafana/dashboards:/etc/grafana/provisioning/dashboards
+    ports:
+      - "3004:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  postgres_data_primary:
+  redis_data_1:
+  redis_data_2:
+  redis_data_3:
+  redis_data_4:
+  redis_data_5:
+  redis_data_6:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  default:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

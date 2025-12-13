@@ -1,0 +1,182 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: observernet-crypto-worker
+  namespace: observernet
+  labels:
+    app: observernet-crypto-worker
+    tier: backend
+    queue: crypto_heavy
+spec:
+  replicas: 5  # KEDA will scale this
+  selector:
+    matchLabels:
+      app: observernet-crypto-worker
+      queue: crypto_heavy
+  template:
+    metadata:
+      labels:
+        app: observernet-crypto-worker
+        queue: crypto_heavy
+        tier: backend
+    spec:
+      containers:
+        - name: crypto-worker
+          image: observernet/worker:latest
+          imagePullPolicy: Always
+          env:
+            - name: CELERY_BROKER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: observernet-secrets
+                  key: celery-broker-url
+            - name: CELERY_RESULT_BACKEND
+              valueFrom:
+                secretKeyRef:
+                  name: observernet-secrets
+                  key: celery-result-backend
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: observernet-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: observernet-secrets
+                  key: redis-url
+            - name: ZK_PROOF_MODE
+              value: "production"
+          command:
+            - "celery"
+            - "-A"
+            - "observernet_worker.crypto_worker"
+            - "worker"
+            - "--loglevel=info"
+            - "--queues=crypto_heavy"
+            - "--concurrency=4"
+            - "--autoscale=8,2"
+            - "--max-tasks-per-child=1000"
+          resources:
+            requests:
+              cpu: 1000m
+              memory: 1Gi
+            limits:
+              cpu: 4000m
+              memory: 4Gi
+          livenessProbe:
+            exec:
+              command:
+                - "celery"
+                - "-A"
+                - "observernet_worker.crypto_worker"
+                - "inspect"
+                - "ping"
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: observernet-mixnet-worker
+  namespace: observernet
+  labels:
+    app: observernet-mixnet-worker
+    tier: backend
+    queue: mixnet
+spec:
+  replicas: 5  # KEDA will scale
+  selector:
+    matchLabels:
+      app: observernet-mixnet-worker
+      queue: mixnet
+  template:
+    metadata:
+      labels:
+        app: observernet-mixnet-worker
+        queue: mixnet
+        tier: backend
+    spec:
+      containers:
+        - name: mixnet-worker
+          image: observernet/worker:latest
+          imagePullPolicy: Always
+          env:
+            - name: CELERY_BROKER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: observernet-secrets
+                  key: celery-broker-url
+            - name: CELERY_RESULT_BACKEND
+              valueFrom:
+                secretKeyRef:
+                  name: observernet-secrets
+                  key: celery-result-backend
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: observernet-secrets
+                  key: database-url
+            - name: MIXNET_THRESHOLD
+              value: "3"
+            - name: MIXNET_TOTAL_NODES
+              value: "5"
+          command:
+            - "celery"
+            - "-A"
+            - "observernet_worker.crypto_worker"
+            - "worker"
+            - "--loglevel=info"
+            - "--queues=mixnet"
+            - "--concurrency=2"
+            - "--autoscale=4,1"
+            - "--max-tasks-per-child=500"
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: observernet-crypto-worker-scaler
+  namespace: observernet
+spec:
+  scaleTargetRef:
+    name: observernet-crypto-worker
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 2
+  maxReplicaCount: 50
+  triggers:
+    - type: redis
+      metadata:
+        address: redis-master.observernet.svc.cluster.local:6379
+        listName: crypto_heavy
+        listLength: "5"
+        activationListLength: "1"
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: observernet-mixnet-worker-scaler
+  namespace: observernet
+spec:
+  scaleTargetRef:
+    name: observernet-mixnet-worker
+  pollingInterval: 10
+  cooldownPeriod: 180
+  minReplicaCount: 2
+  maxReplicaCount: 30
+  triggers:
+    - type: redis
+      metadata:
+        address: redis-master.observernet.svc.cluster.local:6379
+        listName: mixnet
+        listLength: "3"
+        activationListLength: "1"

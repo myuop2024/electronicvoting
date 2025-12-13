@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@electronicvoting/database';
-import { hashPassword } from '@electronicvoting/auth';
+import {
+  hashPassword,
+  createVerificationToken,
+  sendVerificationEmail,
+  formatExpiryDuration,
+  securityConfig,
+} from '@electronicvoting/auth';
 import { z } from 'zod';
 
 const registerSchema = z.object({
@@ -60,7 +66,34 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // TODO: Send verification email
+    // Create email verification token
+    const { token, tokenHash, expiresAt } = createVerificationToken();
+
+    await prisma.verificationToken.create({
+      data: {
+        userId: user.id,
+        type: 'EMAIL_VERIFICATION',
+        token: tokenHash, // Store hashed token
+        expiresAt,
+      },
+    });
+
+    // Build verification URL
+    const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+    const verificationUrl = `${baseUrl}/auth/verify?token=${token}&email=${encodeURIComponent(email.toLowerCase())}`;
+
+    // Send verification email
+    try {
+      await sendVerificationEmail({
+        email: email.toLowerCase(),
+        firstName,
+        verificationUrl,
+        expiresIn: formatExpiryDuration(securityConfig.emailVerificationExpiry),
+      });
+    } catch (emailError) {
+      console.error('Failed to send verification email:', emailError);
+      // Don't fail registration if email fails - user can request resend
+    }
 
     // Create audit log
     await prisma.auditLog.create({

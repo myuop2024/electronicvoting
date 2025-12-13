@@ -248,6 +248,68 @@ export const elections = {
     api.get<{ results: any[] }>(`/v1/elections/${id}/results`),
 };
 
+// Voting types (matching backend)
+export interface VoteSelection {
+  contestId: string;
+  optionId?: string;
+  rank?: number;
+  score?: number;
+  writeIn?: string;
+}
+
+export interface TokenResponse {
+  token: string;
+  expiresAt: string;
+  message: string;
+}
+
+export interface BallotSubmissionResponse {
+  success: boolean;
+  commitmentHash: string;
+  receiptCode: string;
+  submittedAt: string;
+  message: string;
+}
+
+export interface VerifyBallotResponse {
+  found: boolean;
+  status?: string;
+  submittedAt?: string;
+  fabricTxId?: string;
+  message: string;
+}
+
+export interface VoterStatusResponse {
+  status: string;
+  hasVoted: boolean;
+  hasActiveToken: boolean;
+  canVote: boolean;
+}
+
+export const voting = {
+  // Request a vote token after verification
+  requestToken: (electionId: string, voterHash: string) =>
+    api.post<TokenResponse>('/vote/token', { electionId, voterHash }),
+
+  // Submit a ballot using the token
+  submitBallot: (data: {
+    electionId: string;
+    token: string;
+    selections: VoteSelection[];
+    channel?: 'WEB' | 'WHATSAPP' | 'API' | 'OFFLINE' | 'PAPER';
+  }) =>
+    api.post<BallotSubmissionResponse>('/vote/submit', data),
+
+  // Verify a ballot was recorded
+  verifyBallot: (electionId: string, commitmentHash: string) =>
+    api.post<VerifyBallotResponse>('/vote/verify', { electionId, commitmentHash }),
+
+  // Check voter status (for double-vote prevention UI)
+  checkVoterStatus: (electionId: string, voterHash: string) =>
+    api.get<VoterStatusResponse>(`/vote/${electionId}/status/${voterHash}`),
+};
+
+// Legacy votes API (deprecated, use voting instead)
 export const votes = {
   submit: (electionId: string, votes: VoteSubmission[]) =>
     api.post<VoteReceipt>(`/v1/elections/${electionId}/votes`, { votes }),
@@ -306,4 +368,216 @@ export const publicApi = {
 
   verifyVote: (params: { receiptId: string; commitmentHash: string }) =>
     api.get<{ verified: boolean; timestamp: string; blockNumber?: number }>('/public/verify', params),
+};
+
+// ============================================
+// WebSocket Client for Real-time Updates
+// ============================================
+
+export type WebSocketMessage = {
+  type: string;
+  [key: string]: any;
+};
+
+export type MessageHandler = (message: WebSocketMessage) => void;
+
+export class ElectionWebSocket {
+  private ws: WebSocket | null = null;
+  private handlers: Map<string, Set<MessageHandler>> = new Map();
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
+  private reconnectDelay = 1000;
+  private electionId: string;
+
+  constructor(electionId: string) {
+    this.electionId = electionId;
+  }
+
+  connect(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const wsUrl = config.baseUrl.replace(/^http/, 'ws') + `/ws/elections/${this.electionId}`;
+
+      try {
+        this.ws = new WebSocket(wsUrl);
+
+        this.ws.onopen = () => {
+          this.reconnectAttempts = 0;
+          resolve();
+        };
+
+        this.ws.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data) as WebSocketMessage;
+            this.notifyHandlers(message.type, message);
+          } catch (e) {
+            console.error('Failed to parse WebSocket message:', e);
+          }
+        };
+
+        this.ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          reject(error);
+        };
+
+        this.ws.onclose = () => {
+          this.attemptReconnect();
+        };
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  private attemptReconnect(): void {
+    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+      this.reconnectAttempts++;
+      const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+      setTimeout(() => this.connect().catch(() => {}), delay);
+    }
+  }
+
+  private notifyHandlers(type: string, message: WebSocketMessage): void {
+    const handlers = this.handlers.get(type);
+    if (handlers) {
+      handlers.forEach(handler => handler(message));
+    }
+    // Also notify 'all' handlers
+    const allHandlers = this.handlers.get('all');
+    if (allHandlers) {
+      allHandlers.forEach(handler => handler(message));
+    }
+  }
+
+  on(type: string, handler: MessageHandler): () => void {
+    if (!this.handlers.has(type)) {
+      this.handlers.set(type, new Set());
+    }
+    this.handlers.get(type)!.add(handler);
+
+    // Return unsubscribe function
+    return () => {
+      this.handlers.get(type)?.delete(handler);
+    };
+  }
+
+  onTallyUpdate(handler: (data: { contestId: string; tallies: Record<string, number>; totalVotes: number }) => void): () => void {
+    return this.on('tally_update', (msg) => handler({
+      contestId: msg.contest_id,
+      tallies: msg.tallies,
+      totalVotes: msg.total_votes,
+    }));
+  }
+
+  onTurnoutUpdate(handler: (data: { totalEligible: number; totalVoted: number; turnoutPercent: number }) => void): () => void {
+    return this.on('turnout_update', (msg) => handler({
+      totalEligible: msg.total_eligible,
+      totalVoted: msg.total_voted,
+      turnoutPercent: msg.turnout_percent,
+    }));
+  }
+
+  onStatusUpdate(handler: (data: { status: string; details: any }) => void): () => void {
+    return this.on('status_update', (msg) => handler({
+      status: msg.status,
+      details: msg.details,
+    }));
+  }
+
+  send(message: WebSocketMessage): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(message));
+    }
+  }
+
+  ping(): void {
+    this.send({ type: 'ping' });
+  }
+
+  disconnect(): void {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+    this.handlers.clear();
+  }
+}
+
+export class BallotWebSocket {
+  private ws: WebSocket | null = null;
+  private handlers: Map<string, Set<MessageHandler>> = new Map();
+  private commitmentHash: string;
+
+  constructor(commitmentHash: string) {
+    this.commitmentHash = commitmentHash;
+  }
+
+  connect(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const wsUrl = config.baseUrl.replace(/^http/, 'ws') + `/ws/ballot/${this.commitmentHash}`;
+
+      try {
+        this.ws = new WebSocket(wsUrl);
+
+        this.ws.onopen = () => resolve();
+
+        this.ws.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data) as WebSocketMessage;
+            const handlers = this.handlers.get(message.type);
+            if (handlers) {
+              handlers.forEach(handler => handler(message));
+            }
+          } catch (e) {
+            console.error('Failed to parse WebSocket message:', e);
+          }
+        };
+
+        this.ws.onerror = (error) => reject(error);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  onConfirmed(handler: (data: { fabricTxId: string; blockNumber: number }) => void): () => void {
+    if (!this.handlers.has('ballot_confirmed')) {
+      this.handlers.set('ballot_confirmed', new Set());
+    }
+    const wrappedHandler = (msg: WebSocketMessage) => handler({
+      fabricTxId: msg.fabric_tx_id,
+      blockNumber: msg.block_number,
+    });
+    this.handlers.get('ballot_confirmed')!.add(wrappedHandler);
+    return () => this.handlers.get('ballot_confirmed')?.delete(wrappedHandler);
+  }
+
+  onTallied(handler: () => void): () => void {
+    if (!this.handlers.has('ballot_tallied')) {
+      this.handlers.set('ballot_tallied', new Set());
+    }
+    const wrappedHandler = () => handler();
+    this.handlers.get('ballot_tallied')!.add(wrappedHandler);
+    return () => this.handlers.get('ballot_tallied')?.delete(wrappedHandler);
+  }
+
+  disconnect(): void {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+    this.handlers.clear();
+  }
+}
+
+// Factory functions for WebSocket connections
+export const websocket = {
+  connectToElection: (electionId: string) => {
+    const ws = new ElectionWebSocket(electionId);
+    return ws;
+  },
+
+  trackBallot: (commitmentHash: string) => {
+    const ws = new BallotWebSocket(commitmentHash);
+    return ws;
+  },
 };

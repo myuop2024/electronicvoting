@@ -31,15 +31,16 @@ export async function POST(request: NextRequest) {
     const hashedToken = hashToken(token);
 
     // Find valid reset token
-    const resetToken = await prisma.passwordResetToken.findFirst({
+    const resetRecord = await prisma.passwordReset.findFirst({
       where: {
         token: hashedToken,
         expiresAt: { gt: new Date() },
+        usedAt: null, // Ensure token hasn't been used
       },
       include: { user: true },
     });
 
-    if (!resetToken) {
+    if (!resetRecord) {
       return NextResponse.json(
         { message: 'Invalid or expired reset token' },
         { status: 400 }
@@ -49,29 +50,30 @@ export async function POST(request: NextRequest) {
     // Hash new password
     const passwordHash = await hashPassword(password);
 
-    // Update user password
-    await prisma.user.update({
-      where: { id: resetToken.userId },
-      data: {
-        passwordHash,
-        failedLoginAttempts: 0,
-        lockedUntil: null,
-      },
-    });
-
-    // Delete used token
-    await prisma.passwordResetToken.delete({
-      where: { id: resetToken.id },
-    });
+    // Update user password and mark token as used in a transaction
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: resetRecord.userId },
+        data: {
+          passwordHash,
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+        },
+      }),
+      prisma.passwordReset.update({
+        where: { id: resetRecord.id },
+        data: { usedAt: new Date() },
+      }),
+    ]);
 
     // Create audit log
     await prisma.auditLog.create({
       data: {
-        userId: resetToken.userId,
+        userId: resetRecord.userId,
         action: 'user.password_reset',
         resource: 'user',
-        resourceId: resetToken.userId,
-        hash: `reset-${resetToken.userId}-${Date.now()}`,
+        resourceId: resetRecord.userId,
+        hash: `reset-${resetRecord.userId}-${Date.now()}`,
       },
     });
 

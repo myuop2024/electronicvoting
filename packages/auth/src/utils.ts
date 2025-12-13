@@ -66,8 +66,149 @@ export function generateBackupCodes(count: number = securityConfig.mfaBackupCode
   return codes;
 }
 
+// ============================================================================
+// VOTE ANONYMITY - CRYPTOGRAPHIC FUNCTIONS
+// ============================================================================
+
 /**
- * Create a commitment hash for votes
+ * Generate a secure vote token for anonymous ballot submission
+ * This token is given to the voter after verification, but the ballot
+ * uses only the hash - breaking the voter-ballot linkage
+ */
+export function generateVoteToken(): { token: string; tokenHash: string } {
+  const token = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  return { token, tokenHash };
+}
+
+/**
+ * Hash a vote token for storage/lookup
+ */
+export function hashVoteToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+/**
+ * Generate a cryptographically secure salt for ballot commitment
+ */
+export function generateCommitmentSalt(): string {
+  return crypto.randomBytes(32).toString('base64');
+}
+
+/**
+ * Create a ballot commitment (hash of encrypted ballot content + salt)
+ * SECURITY: This does NOT include any voter-identifying information
+ * The commitment allows voters to verify their vote was recorded correctly
+ * without revealing vote content to observers
+ *
+ * Commitment = SHA256(encryptedBallot || salt || electionId || timestamp)
+ */
+export function createBallotCommitment(data: {
+  electionId: string;
+  encryptedBallot: string;
+  salt: string;
+  timestamp?: number;
+}): string {
+  const ts = data.timestamp || Date.now();
+  // Deterministic JSON serialization for consistent hashing
+  const payload = `${data.encryptedBallot}|${data.salt}|${data.electionId}|${ts}`;
+  return crypto.createHash('sha256').update(payload).digest('hex');
+}
+
+/**
+ * Verify a ballot commitment matches the expected value
+ */
+export function verifyBallotCommitment(
+  commitment: string,
+  data: {
+    electionId: string;
+    encryptedBallot: string;
+    salt: string;
+    timestamp: number;
+  }
+): boolean {
+  const expectedCommitment = createBallotCommitment(data);
+  // Constant-time comparison to prevent timing attacks
+  return crypto.timingSafeEqual(
+    Buffer.from(commitment, 'hex'),
+    Buffer.from(expectedCommitment, 'hex')
+  );
+}
+
+/**
+ * Encrypt ballot content using AES-256-GCM
+ * This provides authenticated encryption
+ */
+export function encryptBallot(
+  selections: any[],
+  encryptionKey: Buffer
+): { encrypted: string; iv: string; authTag: string } {
+  const iv = crypto.randomBytes(12); // 96-bit IV for GCM
+  const cipher = crypto.createCipheriv('aes-256-gcm', encryptionKey, iv);
+
+  const plaintext = JSON.stringify(selections);
+  let encrypted = cipher.update(plaintext, 'utf8', 'base64');
+  encrypted += cipher.final('base64');
+
+  return {
+    encrypted,
+    iv: iv.toString('base64'),
+    authTag: cipher.getAuthTag().toString('base64'),
+  };
+}
+
+/**
+ * Decrypt ballot content using AES-256-GCM
+ */
+export function decryptBallot(
+  data: { encrypted: string; iv: string; authTag: string },
+  encryptionKey: Buffer
+): any[] {
+  const iv = Buffer.from(data.iv, 'base64');
+  const authTag = Buffer.from(data.authTag, 'base64');
+
+  const decipher = crypto.createDecipheriv('aes-256-gcm', encryptionKey, iv);
+  decipher.setAuthTag(authTag);
+
+  let decrypted = decipher.update(data.encrypted, 'base64', 'utf8');
+  decrypted += decipher.final('utf8');
+
+  return JSON.parse(decrypted);
+}
+
+/**
+ * Generate an election-specific encryption key
+ * In production, this should be managed by a Hardware Security Module (HSM)
+ */
+export function deriveElectionKey(
+  masterSecret: string,
+  electionId: string
+): Buffer {
+  return crypto.pbkdf2Sync(masterSecret, electionId, 100000, 32, 'sha256');
+}
+
+/**
+ * Create a voter receipt that can be used to verify vote was recorded
+ * WITHOUT revealing vote content
+ */
+export function createVoterReceipt(data: {
+  commitmentHash: string;
+  timestamp: number;
+  electionId: string;
+}): string {
+  const payload = JSON.stringify({
+    c: data.commitmentHash,
+    t: data.timestamp,
+    e: data.electionId,
+  });
+  // Create a short, shareable receipt code
+  const hash = crypto.createHash('sha256').update(payload).digest('hex');
+  return hash.substring(0, 16).toUpperCase();
+}
+
+// DEPRECATED: Old function kept for backwards compatibility warning
+/**
+ * @deprecated Use createBallotCommitment instead. This function includes voterId which breaks anonymity.
  */
 export function createCommitmentHash(data: {
   electionId: string;
@@ -75,10 +216,11 @@ export function createCommitmentHash(data: {
   selections: any[];
   salt?: string;
 }): string {
+  console.warn('SECURITY WARNING: createCommitmentHash is deprecated and breaks vote anonymity. Use createBallotCommitment instead.');
   const salt = data.salt || generateToken(16);
   const payload = JSON.stringify({
     electionId: data.electionId,
-    voterId: data.voterId,
+    // REMOVED: voterId is no longer included
     selections: data.selections,
     salt,
     timestamp: Date.now(),

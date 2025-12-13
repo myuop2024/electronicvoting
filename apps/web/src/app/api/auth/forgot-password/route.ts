@@ -29,29 +29,51 @@ export async function POST(request: NextRequest) {
     const hashedToken = hashToken(resetToken);
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-    // Save token to database
-    await prisma.passwordResetToken.upsert({
+    // Save token to database (upsert to handle existing tokens)
+    // First delete any existing tokens for this user
+    await prisma.passwordReset.deleteMany({
       where: { userId: user.id },
-      create: {
+    });
+
+    // Create new token
+    await prisma.passwordReset.create({
+      data: {
         userId: user.id,
-        token: hashedToken,
-        expiresAt,
-      },
-      update: {
         token: hashedToken,
         expiresAt,
       },
     });
 
-    // TODO: Send email with reset link
-    // const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL}/reset-password?token=${resetToken}`;
-    // await sendEmail({
-    //   to: user.email,
-    //   subject: 'Reset your password',
-    //   html: `Click here to reset your password: ${resetUrl}`
-    // });
+    // Send password reset email
+    const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
 
-    console.log(`Password reset token for ${email}: ${resetToken}`);
+    // In production, use the email service
+    // For development, log the token
+    if (process.env.NODE_ENV === 'production') {
+      try {
+        const response = await fetch(`${process.env.API_URL || 'http://localhost:8000'}/api/email/password-reset`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to_email: user.email,
+            reset_token: resetToken,
+            user_name: user.firstName,
+          }),
+        });
+
+        if (!response.ok) {
+          console.error('Failed to send password reset email');
+        }
+      } catch (error) {
+        console.error('Email service error:', error);
+      }
+    } else {
+      // Development: log the reset URL
+      console.log(`\n========================================`);
+      console.log(`Password Reset Link for ${email}:`);
+      console.log(resetUrl);
+      console.log(`========================================\n`);
+    }
 
     // Create audit log
     await prisma.auditLog.create({

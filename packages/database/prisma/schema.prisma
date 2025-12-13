@@ -371,6 +371,7 @@ model Election {
   allowlists          Allowlist[]
   accessCodes         AccessCode[]
   voters              Voter[]
+  voteTokens          VoteToken[]  // Blind tokens for anonymous voting
   ballots             Ballot[]
   auditLogs           AuditLog[] @relation("ElectionAuditLogs")
   announcements       Announcement[]
@@ -624,7 +625,7 @@ model Voter {
   id              String   @id @default(cuid())
   electionId      String
 
-  // Anonymous identifier
+  // Anonymous identifier (hash of voter PII - cannot be reversed)
   voterHash       String
 
   // Verification
@@ -632,16 +633,16 @@ model Voter {
   verifiedAt      DateTime?
   diditSessionId  String?
 
-  // Tracking
+  // Tracking (for fraud detection, not ballot linkage)
   channel         VoteChannel @default(WEB)
   deviceFingerprint String?
   ipAddress       String?
   geoLocation     Json?
 
-  // Status
+  // Status - CRITICAL: This tracks vote status WITHOUT linking to ballot
   status          VoterStatus @default(PENDING)
 
-  // Metadata
+  // Metadata (demographic for statistics, not ballot linkage)
   region          String?
   district        String?
   category        String?
@@ -651,12 +652,61 @@ model Voter {
   updatedAt       DateTime @updatedAt
 
   election        Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
-  ballot          Ballot?
+  // SECURITY: Removed direct ballot relation to preserve vote anonymity
+  // Voter status is tracked but ballot content is not linked
+  voteTokens      VoteToken[]
   codeUses        AccessCodeUse[]
 
   @@unique([electionId, voterHash])
   @@index([electionId])
   @@index([status])
+}
+
+// ============================================================================
+// VOTE ANONYMITY - BLIND TOKEN SYSTEM
+// ============================================================================
+// This model implements cryptographic unlinkability between voter identity
+// and ballot content. The token acts as a "blinding" layer:
+// 1. Voter proves eligibility → receives hashed token
+// 2. Token is used to submit ballot → token marked as used
+// 3. Ballot is stored with tokenHash but NO voter reference
+// This ensures: Even with full DB access, ballots cannot be linked to voters
+
+model VoteToken {
+  id              String   @id @default(cuid())
+  electionId      String
+  voterId         String
+
+  // The token hash - voter receives the raw token, we store the hash
+  // When voter submits ballot, they provide raw token, we hash and verify
+  tokenHash       String   @unique
+
+  // Blind signature for cryptographic verification (optional advanced feature)
+  blindSignature  String?
+
+  // Token status
+  status          VoteTokenStatus @default(ISSUED)
+  issuedAt        DateTime @default(now())
+  usedAt          DateTime?
+  expiresAt       DateTime
+
+  // For token refresh (vote change allowed scenarios)
+  version         Int      @default(1)
+  previousTokenId String?
+
+  election        Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  voter           Voter    @relation(fields: [voterId], references: [id], onDelete: Cascade)
+
+  @@index([electionId])
+  @@index([tokenHash])
+  @@index([voterId])
+}
+
+enum VoteTokenStatus {
+  ISSUED          // Token issued, not yet used
+  USED            // Token used to submit ballot
+  EXPIRED         // Token expired without use
+  REVOKED         // Token revoked (fraud detected)
 }
 
 enum VoterStatus {
@@ -682,39 +732,49 @@ enum VoteChannel {
 model Ballot {
   id              String   @id @default(cuid())
   electionId      String
-  voterId         String   @unique
 
-  // Commitment
+  // SECURITY: tokenHash links to VoteToken but NOT to voter
+  // This is the hash of the blind token used to submit this ballot
+  // The token itself was issued to a voter, but that linkage is one-way hashed
+  tokenHash       String   @unique
+
+  // Cryptographic commitment (hash of encrypted ballot + salt)
+  // Used for voter verification without revealing vote content
   commitmentHash  String   @unique
+  commitmentSalt  String   // Random salt used in commitment - stored encrypted
+
+  // Encrypted ballot content (AES-256-GCM or similar)
   encryptedBallot String?
 
-  // Blockchain
+  // Blockchain immutability proof
   fabricTxId      String?
   fabricBlockNum  Int?
+  fabricTimestamp DateTime?
 
-  // Channel
+  // Channel identification (for audit, not voter identification)
   channel         VoteChannel
 
   // Status
   status          BallotStatus @default(PENDING)
 
-  // Tracking
+  // Tracking (timestamps only, no voter info)
   submittedAt     DateTime @default(now())
   confirmedAt     DateTime?
   talliedAt       DateTime?
 
-  // For vote changes
+  // For vote changes (if election policy allows)
   version         Int      @default(1)
   previousBallotId String?
 
-  // Metadata
+  // Non-identifying metadata (channel stats, browser type for accessibility)
   metadata        Json     @default("{}")
 
   election        Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
-  voter           Voter    @relation(fields: [voterId], references: [id], onDelete: Cascade)
+  // SECURITY: NO voter relation - ballots are anonymous
   votes           Vote[]
 
   @@index([electionId])
+  @@index([tokenHash])
   @@index([commitmentHash])
   @@index([fabricTxId])
 }

@@ -51,6 +51,10 @@ from ...services.crypto import (
     hash_vote_token,
 )
 from ...services.fabric import anchor_ballot_to_blockchain, FabricGatewayError
+from .websocket import (
+    broadcast_ballot_confirmed,
+    broadcast_turnout_update,
+)
 
 router = APIRouter()
 
@@ -486,10 +490,49 @@ async def submit_ballot(
             )
         )
         await db.commit()
+
+        # Broadcast ballot confirmation via WebSocket
+        try:
+            await broadcast_ballot_confirmed(
+                commitment_hash=commitment_hash,
+                fabric_tx_id=fabric_tx_id,
+                block_number=fabric_block_num,
+            )
+        except Exception:
+            pass  # Non-critical - don't fail if broadcast fails
+
     except FabricGatewayError as e:
         # Log error but don't fail the vote - blockchain anchoring can be retried
         # The ballot is already recorded in the database
         print(f"Warning: Blockchain anchoring failed for ballot {ballot.id}: {e}")
+
+    # Broadcast turnout update via WebSocket
+    try:
+        # Get updated turnout stats
+        from sqlalchemy import func
+        total_voters_result = await db.execute(
+            select(func.count()).select_from(Voter).where(Voter.electionId == payload.electionId)
+        )
+        total_voters = total_voters_result.scalar() or 0
+
+        voted_result = await db.execute(
+            select(func.count()).select_from(Voter).where(
+                Voter.electionId == payload.electionId,
+                Voter.status == VoterStatus.VOTED,
+            )
+        )
+        total_voted = voted_result.scalar() or 0
+
+        turnout_percent = round((total_voted / total_voters * 100), 2) if total_voters > 0 else 0
+
+        await broadcast_turnout_update(
+            election_id=payload.electionId,
+            total_eligible=total_voters,
+            total_voted=total_voted,
+            turnout_percent=turnout_percent,
+        )
+    except Exception:
+        pass  # Non-critical - don't fail if broadcast fails
 
     return BallotSubmissionResponse(
         success=True,

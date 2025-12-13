@@ -3,7 +3,7 @@
 import { ReactNode, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SessionProvider } from 'next-auth/react';
-import { TooltipProvider } from '@electronicvoting/ui';
+import { TooltipProvider, ToastProvider } from '@electronicvoting/ui';
 
 interface ProvidersProps {
   children: ReactNode;
@@ -28,7 +28,9 @@ export function Providers({ children }: ProvidersProps) {
     <SessionProvider>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider delayDuration={300}>
-          {children}
+          <ToastProvider>
+            {children}
+          </ToastProvider>
         </TooltipProvider>
       </QueryClientProvider>
     </SessionProvider>

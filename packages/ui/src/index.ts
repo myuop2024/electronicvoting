@@ -16,3 +16,4 @@ export * from './components/Table';
 export * from './components/Form';
 export * from './components/Navigation';
 export * from './components/Misc';
+export * from './components/Toast';

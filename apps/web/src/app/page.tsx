@@ -121,7 +121,7 @@ const technicalHighlights = [
   },
   {
     title: 'Compliance & Standards',
-    items: ['OWASP ASVS L2', 'GDPR compliant', 'WCAG 2.1 AA', 'SOC 2 ready'],
+    items: ['OWASP ASVS L2', 'GDPR/CCPA/LGPD/PIPL', 'WCAG 2.1 AA', 'Automated DSAR'],
   },
 ];
 
@@ -189,6 +189,10 @@ export default function LandingPage() {
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="h-5 w-5 text-green-400" />
                   <span className="text-sm">Publicly Auditable</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-green-400" />
+                  <span className="text-sm">GDPR/CCPA/LGPD Compliant</span>
                 </div>
               </div>
             </div>
@@ -396,6 +400,177 @@ export default function LandingPage() {
                   </p>
                 </div>
               ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Global Privacy Compliance */}
+        <section className="border-y border-slate-200 bg-white py-20 dark:border-slate-800 dark:bg-slate-900">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="text-center">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-6 dark:bg-green-900/30">
+                <Shield className="w-8 h-8 text-green-600 dark:text-green-400" />
+              </div>
+              <h2 className="text-3xl font-bold text-slate-900 sm:text-4xl dark:text-white">
+                Globally Compliant Privacy-First Architecture
+              </h2>
+              <p className="mx-auto mt-4 max-w-3xl text-lg text-slate-600 dark:text-slate-400">
+                The world's only voting platform with automated Data Subject Rights fulfillment across
+                GDPR, CCPA/CPRA, LGPD, PIPL, PDPA, DPDP Act India, and 140+ jurisdictions — while
+                cryptographically preserving vote anonymity forever.
+              </p>
+            </div>
+
+            <div className="mt-16 grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+              <div className="rounded-2xl border-2 border-green-200 bg-gradient-to-br from-green-50 to-white p-8 dark:border-green-800 dark:from-green-900/20 dark:to-slate-900">
+                <div className="flex items-center gap-3 mb-4">
+                  <CheckCircle2 className="h-8 w-8 text-green-600 dark:text-green-400" />
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                    Automated DSAR Portal
+                  </h3>
+                </div>
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  Full Data Subject Access Request automation: Access, Rectify, Erase, Portability,
+                  Withdraw Consent — all processed instantly per jurisdiction requirements (GDPR 30d,
+                  CCPA 45d, LGPD 15d).
+                </p>
+                <Link
+                  href="/privacy-request"
+                  className="mt-4 inline-flex items-center text-sm font-semibold text-green-600 hover:text-green-700 dark:text-green-400"
+                >
+                  Exercise Your Rights →
+                </Link>
+              </div>
+
+              <div className="rounded-2xl border-2 border-blue-200 bg-gradient-to-br from-blue-50 to-white p-8 dark:border-blue-800 dark:from-blue-900/20 dark:to-slate-900">
+                <div className="flex items-center gap-3 mb-4">
+                  <Lock className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                    Vote Anonymity Protected
+                  </h3>
+                </div>
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  Your vote is cryptographically separated via blind tokens + mix-net. Even if you request
+                  data access, we cannot retrieve how you voted — this protects ballot secrecy by design
+                  (legal exemption: GDPR Art. 89 public interest archiving).
+                </p>
+              </div>
+
+              <div className="rounded-2xl border-2 border-purple-200 bg-gradient-to-br from-purple-50 to-white p-8 dark:border-purple-800 dark:from-purple-900/20 dark:to-slate-900">
+                <div className="flex items-center gap-3 mb-4">
+                  <Globe className="h-8 w-8 text-purple-600 dark:text-purple-400" />
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                    Multi-Jurisdiction Detection
+                  </h3>
+                </div>
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  Automatic jurisdiction detection (IP + self-declare) applies strictest privacy rights.
+                  Covers EU (GDPR), California (CPRA), Brazil (LGPD), China (PIPL), India (DPDP),
+                  Singapore/Thailand (PDPA), and more.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border-2 border-yellow-200 bg-gradient-to-br from-yellow-50 to-white p-8 dark:border-yellow-800 dark:from-yellow-900/20 dark:to-slate-900">
+                <div className="flex items-center gap-3 mb-4">
+                  <AlertCircle className="h-8 w-8 text-yellow-600 dark:text-yellow-400" />
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                    Automated Data Retention
+                  </h3>
+                </div>
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  Profile data auto-anonymized 90 days post-election (after legal challenge period).
+                  Vote commitments retained indefinitely on blockchain for verifiability (no PII).
+                  Privacy-by-design with data minimization.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border-2 border-red-200 bg-gradient-to-br from-red-50 to-white p-8 dark:border-red-800 dark:from-red-900/20 dark:to-slate-900">
+                <div className="flex items-center gap-3 mb-4">
+                  <Shield className="h-8 w-8 text-red-600 dark:text-red-400" />
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                    Breach Notification
+                  </h3>
+                </div>
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  Automated breach detection with multi-jurisdiction notification: GDPR 72h to regulator,
+                  LGPD immediate to ANPD, CCPA prompt to affected users. Full incident response automation.
+                </p>
+              </div>
+
+              <div className="rounded-2xl border-2 border-indigo-200 bg-gradient-to-br from-indigo-50 to-white p-8 dark:border-indigo-800 dark:from-indigo-900/20 dark:to-slate-900">
+                <div className="flex items-center gap-3 mb-4">
+                  <FileText className="h-8 w-8 text-indigo-600 dark:text-indigo-400" />
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white">
+                    Comprehensive Policy
+                  </h3>
+                </div>
+                <p className="text-sm text-slate-600 dark:text-slate-400">
+                  Transparent privacy policy covering all jurisdictions with clear legal bases, retention
+                  periods, and your rights. No hidden clauses, no data sales, no surprises.
+                </p>
+                <Link
+                  href="/privacy"
+                  className="mt-4 inline-flex items-center text-sm font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
+                >
+                  Read Full Policy →
+                </Link>
+              </div>
+            </div>
+
+            {/* Compliance Table */}
+            <div className="mt-16 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-800">
+                    <tr>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">
+                        Jurisdiction
+                      </th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">
+                        Law
+                      </th>
+                      <th className="px-6 py-4 text-left text-sm font-semibold text-slate-900 dark:text-white">
+                        Response Deadline
+                      </th>
+                      <th className="px-6 py-4 text-center text-sm font-semibold text-slate-900 dark:text-white">
+                        Status
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                    {[
+                      { jurisdiction: 'EU/EEA/UK', law: 'GDPR', deadline: '30 days' },
+                      { jurisdiction: 'California, USA', law: 'CCPA/CPRA', deadline: '45 days' },
+                      { jurisdiction: 'Brazil', law: 'LGPD', deadline: '15 days' },
+                      { jurisdiction: 'China', law: 'PIPL', deadline: '30 days' },
+                      { jurisdiction: 'India', law: 'DPDP Act', deadline: '30 days' },
+                      { jurisdiction: 'Singapore', law: 'PDPA', deadline: '30 days' },
+                      { jurisdiction: 'Thailand', law: 'PDPA', deadline: '30 days' },
+                      { jurisdiction: 'South Africa', law: 'POPIA', deadline: '30 days' },
+                      { jurisdiction: 'Canada', law: 'PIPEDA', deadline: '30 days' },
+                      { jurisdiction: 'Japan', law: 'APPI', deadline: '30 days' },
+                    ].map((row, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                        <td className="px-6 py-4 text-sm font-medium text-slate-900 dark:text-slate-300">
+                          {row.jurisdiction}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                          {row.law}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-400">
+                          {row.deadline}
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                            <CheckCircle2 className="h-3 w-3" />
+                            Automated
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </section>

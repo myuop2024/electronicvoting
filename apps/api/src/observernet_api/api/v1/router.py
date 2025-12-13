@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from . import verification, elections, results, admin, whatsapp, public, voting, paper
+from . import verification, elections, results, admin, whatsapp, public, voting, paper, privacy
 
 api_router = APIRouter()
 
@@ -12,3 +12,4 @@ api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(whatsapp.router, prefix="/whatsapp", tags=["whatsapp"])
 api_router.include_router(public.router, prefix="/e", tags=["public"])
 api_router.include_router(paper.router, prefix="/paper", tags=["paper-ballots"])
+api_router.include_router(privacy.router, tags=["privacy"])

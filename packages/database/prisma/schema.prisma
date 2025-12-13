@@ -1,0 +1,1251 @@
+// ObserverNet Election Platform - Complete Database Schema
+// Supports multi-tenant organizations, comprehensive election management,
+// multiple access levels, audit trails, and real-time features
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// ORGANIZATION & TENANT MANAGEMENT
+// ============================================================================
+
+model Organization {
+  id                String   @id @default(cuid())
+  name              String
+  slug              String   @unique
+  description       String?
+  logoUrl           String?
+  websiteUrl        String?
+  primaryColor      String   @default("#3B82F6")
+  secondaryColor    String   @default("#1E40AF")
+
+  // Contact & Legal
+  contactEmail      String
+  contactPhone      String?
+  address           String?
+  country           String?
+  timezone          String   @default("UTC")
+
+  // Subscription & Limits
+  plan              OrgPlan  @default(FREE)
+  maxElections      Int      @default(3)
+  maxVotersPerElection Int   @default(1000)
+  maxAdmins         Int      @default(5)
+  storageQuotaMb    Int      @default(500)
+
+  // Settings
+  settings          Json     @default("{}")
+  features          Json     @default("[]")
+
+  // Verification
+  verifiedAt        DateTime?
+  verificationDocs  Json?
+
+  // Status
+  status            OrgStatus @default(PENDING)
+  suspendedReason   String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  members           OrgMember[]
+  elections         Election[]
+  invitations       OrgInvitation[]
+  apiKeys           ApiKey[]
+  auditLogs         AuditLog[]
+  webhooks          Webhook[]
+  customDomains     CustomDomain[]
+
+  @@index([slug])
+  @@index([status])
+}
+
+enum OrgPlan {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+  GOVERNMENT
+}
+
+enum OrgStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+model CustomDomain {
+  id              String   @id @default(cuid())
+  orgId           String
+  domain          String   @unique
+  verified        Boolean  @default(false)
+  verificationKey String
+  sslStatus       String   @default("pending")
+  createdAt       DateTime @default(now())
+
+  organization    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+}
+
+// ============================================================================
+// USER & AUTHENTICATION
+// ============================================================================
+
+model User {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  emailVerified     DateTime?
+  passwordHash      String?
+
+  // Profile
+  firstName         String
+  lastName          String
+  displayName       String?
+  avatarUrl         String?
+  phone             String?
+  phoneVerified     DateTime?
+
+  // Security
+  mfaEnabled        Boolean   @default(false)
+  mfaSecret         String?
+  mfaBackupCodes    String[]
+  webauthnCredentials Json[]
+
+  // Platform Role
+  platformRole      PlatformRole @default(USER)
+
+  // Status
+  status            UserStatus @default(ACTIVE)
+  lockedUntil       DateTime?
+  failedLoginAttempts Int     @default(0)
+  lastLoginAt       DateTime?
+  lastLoginIp       String?
+
+  // Preferences
+  language          String    @default("en")
+  timezone          String    @default("UTC")
+  notifications     Json      @default("{}")
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relations
+  orgMemberships    OrgMember[]
+  sessions          Session[]
+  passwordResets    PasswordReset[]
+  verificationTokens VerificationToken[]
+  auditLogs         AuditLog[]        @relation("UserAuditLogs")
+  createdElections  Election[]        @relation("ElectionCreator")
+
+  @@index([email])
+  @@index([platformRole])
+}
+
+enum PlatformRole {
+  USER            // Regular user
+  SUPPORT         // Customer support
+  MODERATOR       // Content moderator
+  ADMIN           // Platform admin
+  SUPERADMIN      // Full platform access
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
+model Session {
+  id            String   @id @default(cuid())
+  userId        String
+  token         String   @unique
+  expiresAt     DateTime
+
+  // Device Info
+  userAgent     String?
+  ipAddress     String?
+  deviceType    String?
+  deviceName    String?
+  location      String?
+
+  createdAt     DateTime @default(now())
+  lastActiveAt  DateTime @default(now())
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
+}
+
+model PasswordReset {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+}
+
+model VerificationToken {
+  id        String   @id @default(cuid())
+  userId    String
+  type      VerificationType
+  token     String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+}
+
+enum VerificationType {
+  EMAIL
+  PHONE
+  MFA_SETUP
+}
+
+// ============================================================================
+// ORGANIZATION MEMBERSHIP & ROLES
+// ============================================================================
+
+model OrgMember {
+  id        String      @id @default(cuid())
+  userId    String
+  orgId     String
+  role      OrgRole
+
+  // Permissions (granular)
+  permissions Json      @default("[]")
+
+  // Status
+  status    MemberStatus @default(ACTIVE)
+
+  // Tracking
+  invitedBy String?
+  joinedAt  DateTime    @default(now())
+  lastActiveAt DateTime?
+
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId])
+  @@index([orgId])
+  @@index([role])
+}
+
+enum OrgRole {
+  VIEWER        // Read-only access
+  OBSERVER      // Can view and export results
+  STAFF         // Can manage voters and basic operations
+  MANAGER       // Can manage elections
+  ADMIN         // Full org admin
+  OWNER         // Organization owner
+}
+
+enum MemberStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  REMOVED
+}
+
+model OrgInvitation {
+  id        String   @id @default(cuid())
+  orgId     String
+  email     String
+  role      OrgRole
+  token     String   @unique
+  expiresAt DateTime
+
+  invitedBy String
+  acceptedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([email])
+  @@index([token])
+}
+
+// ============================================================================
+// ELECTIONS
+// ============================================================================
+
+model Election {
+  id              String   @id @default(cuid())
+  orgId           String
+  createdById     String
+
+  // Basic Info
+  name            String
+  slug            String
+  description     String?
+  shortDescription String?
+
+  // Type & Configuration
+  type            ElectionType @default(STANDARD)
+  voteType        VoteType     @default(PLURALITY)
+  maxSelectionsPerContest Int  @default(1)
+
+  // Branding
+  logoUrl         String?
+  heroImageUrl    String?
+  primaryColor    String?
+  secondaryColor  String?
+  customCss       String?
+
+  // Scheduling
+  registrationStartAt DateTime?
+  registrationEndAt   DateTime?
+  votingStartAt       DateTime
+  votingEndAt         DateTime
+  resultsPublishAt    DateTime?
+
+  // Policies
+  allowOffline        Boolean @default(false)
+  allowChannels       String[] @default(["web"])
+  verificationMode    VerificationMode @default(CODE_ONLY)
+  requireCaptcha      Boolean @default(true)
+  allowVoteChange     Boolean @default(false)
+  voteChangeDeadline  DateTime?
+
+  // Rate Limits
+  deviceLimit         Int?
+  ipThrottle          Int?
+
+  // Geo-Fencing
+  geoFenceEnabled     Boolean @default(false)
+  geoFencePolygon     Json?
+
+  // Accessibility
+  languages           String[] @default(["en"])
+  accessibilityMode   Boolean @default(true)
+
+  // Results Configuration
+  resultsVisibility   ResultsVisibility @default(AFTER_CLOSE)
+  showVoterTurnout    Boolean @default(true)
+  showByChannel       Boolean @default(true)
+  showByRegion        Boolean @default(false)
+
+  // Blockchain
+  fabricChannelId     String?
+  fabricTxId          String?
+
+  // Status
+  status              ElectionStatus @default(DRAFT)
+  publishedAt         DateTime?
+  archivedAt          DateTime?
+
+  // Metadata
+  settings            Json @default("{}")
+  metadata            Json @default("{}")
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  // Relations
+  organization        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  creator             User @relation("ElectionCreator", fields: [createdById], references: [id])
+  contests            Contest[]
+  allowlists          Allowlist[]
+  accessCodes         AccessCode[]
+  voters              Voter[]
+  voteTokens          VoteToken[]  // Blind tokens for anonymous voting
+  ballots             Ballot[]
+  auditLogs           AuditLog[] @relation("ElectionAuditLogs")
+  announcements       Announcement[]
+  observers           Observer[]
+  paperBallots        PaperBallot[]
+  resultSnapshots     ResultSnapshot[]
+
+  @@unique([orgId, slug])
+  @@index([orgId])
+  @@index([status])
+  @@index([votingStartAt])
+  @@index([votingEndAt])
+}
+
+enum ElectionType {
+  STANDARD
+  REFERENDUM
+  SURVEY
+  RANKED_CHOICE
+  APPROVAL
+  WEIGHTED
+}
+
+enum VoteType {
+  PLURALITY       // Single vote, most votes wins
+  APPROVAL        // Vote for multiple, most approvals wins
+  RANKED_CHOICE   // Rank preferences, instant runoff
+  WEIGHTED        // Distribute weight among options
+  SCORE           // Rate each option
+}
+
+enum VerificationMode {
+  NONE            // No verification (anonymous)
+  CODE_ONLY       // Access code only
+  DIDIT_ONLY      // Didit identity only
+  HYBRID          // Both required
+  ALLOWLIST       // Must be on allowlist
+}
+
+enum ResultsVisibility {
+  HIDDEN          // Never public
+  AFTER_CLOSE     // After voting ends
+  REAL_TIME       // Live updates
+  CUSTOM          // Custom date
+}
+
+enum ElectionStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  PUBLISHED
+  REGISTRATION_OPEN
+  VOTING_OPEN
+  VOTING_CLOSED
+  TALLYING
+  RESULTS_PUBLISHED
+  ARCHIVED
+  CANCELLED
+}
+
+// ============================================================================
+// CONTESTS & CANDIDATES
+// ============================================================================
+
+model Contest {
+  id              String   @id @default(cuid())
+  electionId      String
+
+  // Basic Info
+  title           String
+  description     String?
+  instructions    String?
+
+  // Configuration
+  type            ContestType @default(CANDIDATE)
+  voteType        VoteType?   // Override election default
+  minSelections   Int         @default(0)
+  maxSelections   Int         @default(1)
+
+  // For weighted voting
+  totalWeight     Int?
+
+  // Display
+  position        Int         @default(0)
+  imageUrl        String?
+
+  // Status
+  isActive        Boolean     @default(true)
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  election        Election    @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  options         ContestOption[]
+  votes           Vote[]
+
+  @@index([electionId])
+  @@index([position])
+}
+
+enum ContestType {
+  CANDIDATE       // Elect candidates
+  PROPOSITION     // Yes/No question
+  MEASURE         // Multiple choice
+  WRITE_IN        // Allow write-in
+  RANKED          // Ranked choice
+}
+
+model ContestOption {
+  id              String   @id @default(cuid())
+  contestId       String
+
+  // Basic Info
+  title           String
+  subtitle        String?
+  description     String?
+
+  // For Candidates
+  party           String?
+  incumbentStatus Boolean  @default(false)
+
+  // Display
+  position        Int      @default(0)
+  imageUrl        String?
+  color           String?
+
+  // External Reference
+  externalId      String?
+
+  // Status
+  isActive        Boolean  @default(true)
+  isWriteIn       Boolean  @default(false)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  contest         Contest  @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  votes           Vote[]
+
+  @@index([contestId])
+  @@index([position])
+}
+
+// ============================================================================
+// VOTER MANAGEMENT
+// ============================================================================
+
+model Allowlist {
+  id              String   @id @default(cuid())
+  electionId      String
+
+  name            String
+  description     String?
+  source          String?  // CSV filename, API source, etc.
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  election        Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  entries         AllowlistEntry[]
+
+  @@index([electionId])
+}
+
+model AllowlistEntry {
+  id              String   @id @default(cuid())
+  allowlistId     String
+
+  // Hashed identifiers (no PII stored)
+  emailHash       String?
+  phoneHash       String?
+  memberIdHash    String?
+
+  // For lookup
+  lookupKey       String   // Combined hash for fast lookup
+
+  // Metadata
+  region          String?
+  district        String?
+  category        String?
+  weight          Int?     // For weighted voting
+
+  // Status
+  verified        Boolean  @default(false)
+  usedAt          DateTime?
+
+  createdAt       DateTime @default(now())
+
+  allowlist       Allowlist @relation(fields: [allowlistId], references: [id], onDelete: Cascade)
+
+  @@unique([allowlistId, lookupKey])
+  @@index([lookupKey])
+}
+
+model AccessCode {
+  id              String   @id @default(cuid())
+  electionId      String
+
+  code            String   @unique
+  codeHash        String   @unique
+
+  // Configuration
+  mode            CodeMode @default(SINGLE_USE)
+  maxUses         Int      @default(1)
+  usedCount       Int      @default(0)
+
+  // Scoping
+  scope           String?  // Region, district, category
+
+  // Validity
+  validFrom       DateTime @default(now())
+  expiresAt       DateTime?
+
+  // Tracking
+  createdBy       String?
+  lastUsedAt      DateTime?
+
+  createdAt       DateTime @default(now())
+
+  election        Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  uses            AccessCodeUse[]
+
+  @@index([electionId])
+  @@index([code])
+  @@index([codeHash])
+}
+
+enum CodeMode {
+  SINGLE_USE
+  MULTI_USE
+  UNLIMITED
+}
+
+model AccessCodeUse {
+  id              String   @id @default(cuid())
+  codeId          String
+  voterId         String
+
+  usedAt          DateTime @default(now())
+  ipAddress       String?
+  userAgent       String?
+
+  accessCode      AccessCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
+  voter           Voter      @relation(fields: [voterId], references: [id], onDelete: Cascade)
+
+  @@index([codeId])
+  @@index([voterId])
+}
+
+model Voter {
+  id              String   @id @default(cuid())
+  electionId      String
+
+  // Anonymous identifier (hash of voter PII - cannot be reversed)
+  voterHash       String
+
+  // Verification
+  verificationMethod VerificationMode?
+  verifiedAt      DateTime?
+  diditSessionId  String?
+
+  // Tracking (for fraud detection, not ballot linkage)
+  channel         VoteChannel @default(WEB)
+  deviceFingerprint String?
+  ipAddress       String?
+  geoLocation     Json?
+
+  // Status - CRITICAL: This tracks vote status WITHOUT linking to ballot
+  status          VoterStatus @default(PENDING)
+
+  // Metadata (demographic for statistics, not ballot linkage)
+  region          String?
+  district        String?
+  category        String?
+  weight          Int?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  election        Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  // SECURITY: Removed direct ballot relation to preserve vote anonymity
+  // Voter status is tracked but ballot content is not linked
+  voteTokens      VoteToken[]
+  codeUses        AccessCodeUse[]
+
+  @@unique([electionId, voterHash])
+  @@index([electionId])
+  @@index([status])
+}
+
+// ============================================================================
+// VOTE ANONYMITY - BLIND TOKEN SYSTEM
+// ============================================================================
+// This model implements cryptographic unlinkability between voter identity
+// and ballot content. The token acts as a "blinding" layer:
+// 1. Voter proves eligibility → receives hashed token
+// 2. Token is used to submit ballot → token marked as used
+// 3. Ballot is stored with tokenHash but NO voter reference
+// This ensures: Even with full DB access, ballots cannot be linked to voters
+
+model VoteToken {
+  id              String   @id @default(cuid())
+  electionId      String
+  voterId         String
+
+  // The token hash - voter receives the raw token, we store the hash
+  // When voter submits ballot, they provide raw token, we hash and verify
+  tokenHash       String   @unique
+
+  // Blind signature for cryptographic verification (optional advanced feature)
+  blindSignature  String?
+
+  // Token status
+  status          VoteTokenStatus @default(ISSUED)
+  issuedAt        DateTime @default(now())
+  usedAt          DateTime?
+  expiresAt       DateTime
+
+  // For token refresh (vote change allowed scenarios)
+  version         Int      @default(1)
+  previousTokenId String?
+
+  election        Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  voter           Voter    @relation(fields: [voterId], references: [id], onDelete: Cascade)
+
+  @@index([electionId])
+  @@index([tokenHash])
+  @@index([voterId])
+}
+
+enum VoteTokenStatus {
+  ISSUED          // Token issued, not yet used
+  USED            // Token used to submit ballot
+  EXPIRED         // Token expired without use
+  REVOKED         // Token revoked (fraud detected)
+}
+
+enum VoterStatus {
+  PENDING         // Started but not verified
+  VERIFIED        // Passed verification
+  VOTED           // Submitted ballot
+  REJECTED        // Failed verification
+  BLOCKED         // Blocked for fraud
+}
+
+enum VoteChannel {
+  WEB
+  WHATSAPP
+  API
+  OFFLINE
+  PAPER
+}
+
+// ============================================================================
+// BALLOTS & VOTES
+// ============================================================================
+
+model Ballot {
+  id              String   @id @default(cuid())
+  electionId      String
+
+  // SECURITY: tokenHash links to VoteToken but NOT to voter
+  // This is the hash of the blind token used to submit this ballot
+  // The token itself was issued to a voter, but that linkage is one-way hashed
+  tokenHash       String   @unique
+
+  // Cryptographic commitment (hash of encrypted ballot + salt)
+  // Used for voter verification without revealing vote content
+  commitmentHash  String   @unique
+  commitmentSalt  String   // Random salt used in commitment - stored encrypted
+
+  // Encrypted ballot content (AES-256-GCM or similar)
+  encryptedBallot String?
+
+  // Blockchain immutability proof
+  fabricTxId      String?
+  fabricBlockNum  Int?
+  fabricTimestamp DateTime?
+
+  // Channel identification (for audit, not voter identification)
+  channel         VoteChannel
+
+  // Status
+  status          BallotStatus @default(PENDING)
+
+  // Tracking (timestamps only, no voter info)
+  submittedAt     DateTime @default(now())
+  confirmedAt     DateTime?
+  talliedAt       DateTime?
+
+  // For vote changes (if election policy allows)
+  version         Int      @default(1)
+  previousBallotId String?
+
+  // Non-identifying metadata (channel stats, browser type for accessibility)
+  metadata        Json     @default("{}")
+
+  election        Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
+  // SECURITY: NO voter relation - ballots are anonymous
+  votes           Vote[]
+
+  @@index([electionId])
+  @@index([tokenHash])
+  @@index([commitmentHash])
+  @@index([fabricTxId])
+}
+
+enum BallotStatus {
+  PENDING         // Submitted, awaiting confirmation
+  CONFIRMED       // Confirmed on blockchain
+  TALLIED         // Included in tally
+  SUPERSEDED      // Replaced by new ballot
+  REJECTED        // Invalid ballot
+}
+
+model Vote {
+  id              String   @id @default(cuid())
+  ballotId        String
+  contestId       String
+  optionId        String?
+
+  // For different vote types
+  rank            Int?     // For ranked choice
+  weight          Int?     // For weighted
+  score           Int?     // For score voting
+  writeIn         String?  // For write-in
+
+  createdAt       DateTime @default(now())
+
+  ballot          Ballot   @relation(fields: [ballotId], references: [id], onDelete: Cascade)
+  contest         Contest  @relation(fields: [contestId], references: [id], onDelete: Cascade)
+  option          ContestOption? @relation(fields: [optionId], references: [id])
+
+  @@index([ballotId])
+  @@index([contestId])
+  @@index([optionId])
+}
+
+// ============================================================================
+// PAPER BALLOTS & OCR
+// ============================================================================
+
+model PaperBallot {
+  id              String   @id @default(cuid())
+  electionId      String
+
+  // Source
+  batchId         String?
+  scannerLocation String?
+
+  // Images
+  originalImageUrl String
+  redactedImageUrl String?
+
+  // OCR
+  ocrRawText      String?
+  ocrConfidence   Float?
+  ocrSelections   Json?
+
+  // AI Review
+  aiReviewStatus  AIReviewStatus @default(PENDING)
+  aiReviewNotes   String?
+  aiReviewedAt    DateTime?
+
+  // Human Review
+  humanReviewRequired Boolean @default(false)
+  humanReviewStatus ReviewStatus @default(PENDING)
+  humanReviewerId String?
+  humanReviewNotes String?
+  humanReviewedAt DateTime?
+
+  // Final Selections
+  finalSelections Json?
+
+  // Commitment
+  commitmentHash  String?  @unique
+  fabricTxId      String?
+
+  // Status
+  status          PaperBallotStatus @default(SCANNED)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  election        Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
+
+  @@index([electionId])
+  @@index([batchId])
+  @@index([status])
+}
+
+enum PaperBallotStatus {
+  SCANNED
+  OCR_PROCESSING
+  OCR_COMPLETE
+  AI_REVIEWING
+  PENDING_HUMAN_REVIEW
+  APPROVED
+  COMMITTED
+  REJECTED
+}
+
+enum AIReviewStatus {
+  PENDING
+  PROCESSING
+  COMPLETE
+  ERROR
+}
+
+enum ReviewStatus {
+  PENDING
+  IN_PROGRESS
+  APPROVED
+  REJECTED
+  NEEDS_CLARIFICATION
+}
+
+// ============================================================================
+// OBSERVERS
+// ============================================================================
+
+model Observer {
+  id              String   @id @default(cuid())
+  electionId      String
+
+  name            String
+  email           String
+  organization    String?
+
+  // Access
+  accessToken     String   @unique
+  permissions     String[] @default(["view_results", "view_turnout"])
+
+  // Status
+  status          ObserverStatus @default(PENDING)
+  approvedBy      String?
+  approvedAt      DateTime?
+
+  // Tracking
+  lastAccessAt    DateTime?
+  accessCount     Int      @default(0)
+
+  createdAt       DateTime @default(now())
+
+  election        Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
+
+  @@index([electionId])
+  @@index([accessToken])
+}
+
+enum ObserverStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REVOKED
+}
+
+// ============================================================================
+// ANNOUNCEMENTS
+// ============================================================================
+
+model Announcement {
+  id              String   @id @default(cuid())
+  electionId      String
+
+  title           String
+  content         String
+  type            AnnouncementType @default(INFO)
+
+  // Scheduling
+  publishAt       DateTime @default(now())
+  expiresAt       DateTime?
+
+  // Targeting
+  targetChannels  String[] @default([])
+
+  createdBy       String
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  election        Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
+
+  @@index([electionId])
+  @@index([publishAt])
+}
+
+enum AnnouncementType {
+  INFO
+  WARNING
+  URGENT
+  MAINTENANCE
+}
+
+// ============================================================================
+// RESULTS & ANALYTICS
+// ============================================================================
+
+model ResultSnapshot {
+  id              String   @id @default(cuid())
+  electionId      String
+
+  // Snapshot Type
+  type            SnapshotType
+
+  // Data
+  data            Json
+
+  // Filters
+  channel         VoteChannel?
+  region          String?
+
+  // Timing
+  timestamp       DateTime @default(now())
+
+  // Blockchain
+  fabricTxId      String?
+
+  election        Election @relation(fields: [electionId], references: [id], onDelete: Cascade)
+
+  @@index([electionId])
+  @@index([timestamp])
+}
+
+enum SnapshotType {
+  TURNOUT
+  RESULTS
+  FINAL
+  AUDIT
+}
+
+// ============================================================================
+// AUDIT LOGS
+// ============================================================================
+
+model AuditLog {
+  id              String   @id @default(cuid())
+
+  // Context
+  orgId           String?
+  electionId      String?
+  userId          String?
+
+  // Action
+  action          String
+  resource        String
+  resourceId      String?
+
+  // Details
+  details         Json?
+  previousState   Json?
+  newState        Json?
+
+  // Request Context
+  ipAddress       String?
+  userAgent       String?
+  requestId       String?
+
+  // Hash Chain
+  previousHash    String?
+  hash            String
+
+  createdAt       DateTime @default(now())
+
+  organization    Organization? @relation(fields: [orgId], references: [id])
+  election        Election?     @relation("ElectionAuditLogs", fields: [electionId], references: [id])
+  user            User?         @relation("UserAuditLogs", fields: [userId], references: [id])
+
+  @@index([orgId])
+  @@index([electionId])
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// API KEYS & WEBHOOKS
+// ============================================================================
+
+model ApiKey {
+  id              String   @id @default(cuid())
+  orgId           String
+
+  name            String
+  keyHash         String   @unique
+  keyPrefix       String   // First 8 chars for display
+
+  // Permissions
+  scopes          String[]
+
+  // Rate Limits
+  rateLimit       Int      @default(1000)
+  ratePeriod      String   @default("hour")
+
+  // Status
+  status          ApiKeyStatus @default(ACTIVE)
+  lastUsedAt      DateTime?
+  usageCount      Int      @default(0)
+
+  // Expiry
+  expiresAt       DateTime?
+
+  createdBy       String
+  createdAt       DateTime @default(now())
+
+  organization    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([keyHash])
+}
+
+enum ApiKeyStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+model Webhook {
+  id              String   @id @default(cuid())
+  orgId           String
+
+  name            String
+  url             String
+  secret          String
+
+  // Events
+  events          String[]
+
+  // Status
+  status          WebhookStatus @default(ACTIVE)
+
+  // Stats
+  lastTriggeredAt DateTime?
+  successCount    Int      @default(0)
+  failureCount    Int      @default(0)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  deliveries      WebhookDelivery[]
+
+  @@index([orgId])
+}
+
+enum WebhookStatus {
+  ACTIVE
+  PAUSED
+  DISABLED
+}
+
+model WebhookDelivery {
+  id              String   @id @default(cuid())
+  webhookId       String
+
+  event           String
+  payload         Json
+
+  // Response
+  statusCode      Int?
+  responseBody    String?
+  responseTime    Int?     // ms
+
+  // Status
+  status          DeliveryStatus
+  attempts        Int      @default(1)
+  nextRetryAt     DateTime?
+
+  createdAt       DateTime @default(now())
+
+  webhook         Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId])
+  @@index([createdAt])
+}
+
+enum DeliveryStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  RETRYING
+}
+
+// ============================================================================
+// NOTIFICATIONS
+// ============================================================================
+
+model Notification {
+  id              String   @id @default(cuid())
+
+  // Recipient
+  userId          String?
+  email           String?
+  phone           String?
+
+  // Content
+  type            NotificationType
+  channel         NotificationChannel
+  subject         String?
+  content         String
+
+  // Status
+  status          NotificationStatus @default(PENDING)
+  sentAt          DateTime?
+  deliveredAt     DateTime?
+  failedAt        DateTime?
+  failureReason   String?
+
+  // Tracking
+  openedAt        DateTime?
+  clickedAt       DateTime?
+
+  // Context
+  electionId      String?
+  metadata        Json?
+
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum NotificationType {
+  ELECTION_INVITATION
+  VOTING_REMINDER
+  VERIFICATION_CODE
+  VOTE_CONFIRMATION
+  RESULTS_AVAILABLE
+  SYSTEM_ALERT
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  WHATSAPP
+  PUSH
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+  BOUNCED
+}
+
+// ============================================================================
+// SYSTEM CONFIGURATION
+// ============================================================================
+
+model SystemConfig {
+  id              String   @id @default(cuid())
+  key             String   @unique
+  value           Json
+  description     String?
+
+  updatedBy       String?
+  updatedAt       DateTime @updatedAt
+}
+
+model FeatureFlag {
+  id              String   @id @default(cuid())
+  key             String   @unique
+  name            String
+  description     String?
+
+  enabled         Boolean  @default(false)
+
+  // Targeting
+  targetOrgIds    String[]
+  targetUserIds   String[]
+  percentage      Int?     // % of users
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}

@@ -1,35 +1,36 @@
 import '../styles/globals.css';
 import type { ReactNode } from 'react';
+import type { Metadata, Viewport } from 'next';
+import { Inter } from 'next/font/google';
+import { Providers } from '../components/Providers';
+import { SuperAdminLayout } from '../components/layout';
 
-export const metadata = {
-  title: 'ObserverNet Super Admin',
-  description: 'Operate Fabric clusters, provider integrations, and security automation.'
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
+
+export const metadata: Metadata = {
+  title: {
+    default: 'Platform Admin | ObserverNet',
+    template: '%s | ObserverNet Platform',
+  },
+  description: 'Operate Fabric clusters, manage organizations, and monitor platform health.',
+  icons: {
+    icon: '/favicon.ico',
+  },
 };
 
-export default function SuperAdminLayout({ children }: { children: ReactNode }) {
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  themeColor: '#0f172a',
+};
+
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className="h-full">
-      <body className="min-h-full bg-slate-100 text-slate-900">
-        <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-8 px-10 py-10">
-          <header className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold">ObserverNet Operations</h1>
-              <p className="text-sm text-slate-500">Fabric health, provider onboarding, and AI governance.</p>
-            </div>
-            <nav className="flex gap-4 text-sm">
-              <a href="/fabric" className="font-medium text-blue-600">
-                Fabric Control
-              </a>
-              <a href="/providers" className="font-medium text-blue-600">
-                Providers
-              </a>
-              <a href="/security" className="font-medium text-blue-600">
-                Security
-              </a>
-            </nav>
-          </header>
-          <main className="flex-1 rounded-xl bg-white p-8 shadow-lg">{children}</main>
-        </div>
+    <html lang="en" className={`${inter.variable} h-full`} suppressHydrationWarning>
+      <body className="min-h-full bg-slate-950 font-sans text-slate-100 antialiased">
+        <Providers>
+          <SuperAdminLayout>{children}</SuperAdminLayout>
+        </Providers>
       </body>
     </html>
   );

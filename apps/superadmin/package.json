@@ -3,23 +3,34 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3002",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 3002",
     "lint": "next lint"
   },
   "dependencies": {
     "@electronicvoting/ui": "workspace:^",
     "@electronicvoting/config": "workspace:^",
+    "@electronicvoting/auth": "workspace:^",
+    "@electronicvoting/database": "workspace:^",
     "@tanstack/react-query": "5.32.0",
     "axios": "1.6.8",
     "next": "15.0.0-canary.15",
+    "next-auth": "5.0.0-beta.16",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "tailwindcss": "3.4.6",
     "autoprefixer": "10.4.17",
     "postcss": "8.4.35",
-    "zod": "3.23.8"
+    "zod": "3.23.8",
+    "lucide-react": "0.356.0",
+    "recharts": "2.9.0",
+    "date-fns": "3.6.0",
+    "clsx": "2.1.0",
+    "@radix-ui/react-dialog": "1.1.1",
+    "@radix-ui/react-dropdown-menu": "2.0.6",
+    "@radix-ui/react-tabs": "1.0.4",
+    "@radix-ui/react-tooltip": "1.0.7"
   },
   "devDependencies": {
     "@types/node": "20.11.30",
